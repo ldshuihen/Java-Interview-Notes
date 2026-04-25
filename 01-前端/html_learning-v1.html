@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HTML 分类介绍学习</title>
+<link href="https://fonts.googleapis.com/css2?family=ZCOOL+XiaoWei&family=Noto+Sans+SC:wght@300;400;500;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d0f14;
+    --surface: #151820;
+    --surface2: #1c2030;
+    --border: #252a3a;
+    --accent: #4f9eff;
+    --accent2: #ff6b6b;
+    --accent3: #56d9a0;
+    --accent4: #ffd166;
+    --accent5: #c084fc;
+    --text: #e8eaf0;
+    --text-muted: #6b7280;
+    --text-dim: #9ca3af;
+    --glow: rgba(79,158,255,0.15);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Noto Sans SC', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Background grid */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(79,158,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(79,158,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 24px 80px;
+  }
+
+  /* Header */
+  header {
+    text-align: center;
+    padding: 64px 0 48px;
+    position: relative;
+  }
+
+  .header-badge {
+    display: inline-block;
+    font-family: 'Fira Code', monospace;
+    font-size: 12px;
+    color: var(--accent);
+    background: rgba(79,158,255,0.1);
+    border: 1px solid rgba(79,158,255,0.3);
+    border-radius: 4px;
+    padding: 4px 12px;
+    letter-spacing: 2px;
+    margin-bottom: 24px;
+    animation: fadeDown 0.6s ease both;
+  }
+
+  h1 {
+    font-family: 'ZCOOL XiaoWei', serif;
+    font-size: clamp(36px, 6vw, 64px);
+    line-height: 1.1;
+    background: linear-gradient(135deg, #fff 0%, var(--accent) 60%, var(--accent5) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: fadeDown 0.6s 0.1s ease both;
+  }
+
+  .subtitle {
+    color: var(--text-dim);
+    font-size: 16px;
+    margin-top: 12px;
+    font-weight: 300;
+    animation: fadeDown 0.6s 0.2s ease both;
+  }
+
+  /* Nav tabs */
+  .nav-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    margin: 40px 0 48px;
+    animation: fadeDown 0.6s 0.3s ease both;
+  }
+
+  .nav-tab {
+    font-family: 'Fira Code', monospace;
+    font-size: 13px;
+    padding: 8px 18px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+
+  .nav-tab:hover { border-color: var(--accent); color: var(--accent); }
+  .nav-tab.active { background: rgba(79,158,255,0.15); border-color: var(--accent); color: var(--accent); }
+
+  /* Sections */
+  .section {
+    display: none;
+    animation: fadeUp 0.4s ease;
+  }
+  .section.active { display: block; }
+
+  /* Category header */
+  .cat-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+
+  .cat-icon {
+    width: 48px; height: 48px;
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px;
+    flex-shrink: 0;
+  }
+
+  .cat-title {
+    font-family: 'ZCOOL XiaoWei', serif;
+    font-size: 28px;
+  }
+
+  .cat-desc {
+    color: var(--text-dim);
+    font-size: 14px;
+    margin-top: 4px;
+    line-height: 1.6;
+  }
+
+  /* Cards grid */
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 16px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 24px;
+    transition: all 0.25s;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--card-accent, var(--accent));
+    opacity: 0;
+    transition: opacity 0.25s;
+  }
+
+  .card:hover {
+    border-color: var(--card-accent, var(--accent));
+    transform: translateY(-2px);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  }
+
+  .card:hover::before { opacity: 1; }
+
+  .card-tag {
+    font-family: 'Fira Code', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--card-accent, var(--accent));
+    background: rgba(79,158,255,0.1);
+    border-radius: 4px;
+    padding: 3px 10px;
+    display: inline-block;
+    margin-bottom: 10px;
+  }
+
+  .card-name {
+    font-size: 16px;
+    font-weight: 500;
+    margin-bottom: 6px;
+  }
+
+  .card-desc {
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.7;
+  }
+
+  /* Code example */
+  .code-example {
+    margin-top: 14px;
+    background: var(--surface2);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-family: 'Fira Code', monospace;
+    font-size: 12px;
+    line-height: 1.8;
+    color: #a8b4d0;
+    border: 1px solid var(--border);
+    overflow-x: auto;
+    display: none;
+  }
+
+  .card.expanded .code-example { display: block; }
+  .card.expanded { background: var(--surface2); }
+
+  .code-example .tag { color: var(--accent2); }
+  .code-example .attr { color: var(--accent4); }
+  .code-example .val { color: var(--accent3); }
+  .code-example .comment { color: var(--text-muted); font-style: italic; }
+  .code-example .text { color: var(--text); }
+
+  /* Expand hint */
+  .expand-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 10px;
+    font-family: 'Fira Code', monospace;
+  }
+
+  .card:hover .expand-hint { color: var(--card-accent, var(--accent)); }
+
+  /* Overview section */
+  .overview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+    margin-top: 24px;
+  }
+
+  .ov-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+  }
+
+  .ov-card:hover { transform: translateY(-3px); }
+
+  .ov-emoji { font-size: 28px; margin-bottom: 8px; }
+  .ov-label { font-size: 14px; font-weight: 500; margin-bottom: 4px; }
+  .ov-count { font-size: 12px; color: var(--text-muted); font-family: 'Fira Code', monospace; }
+
+  /* Structure diagram */
+  .struct {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px;
+    font-family: 'Fira Code', monospace;
+    font-size: 14px;
+    line-height: 2;
+    margin-bottom: 32px;
+  }
+
+  .struct-line { display: flex; align-items: center; gap: 6px; }
+  .struct-indent { color: transparent; user-select: none; }
+  .s-tag { color: var(--accent2); }
+  .s-attr { color: var(--accent4); }
+  .s-val { color: var(--accent3); }
+  .s-text { color: var(--text); }
+  .s-comment { color: var(--text-muted); font-size: 12px; margin-left: 12px; }
+
+  /* Animations */
+  @keyframes fadeDown {
+    from { opacity: 0; transform: translateY(-16px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* Mobile */
+  @media (max-width: 600px) {
+    .cards { grid-template-columns: 1fr; }
+    .nav-tabs { gap: 6px; }
+    .nav-tab { font-size: 12px; padding: 6px 12px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="header-badge">&lt;!DOCTYPE html&gt;</div>
+    <h1>HTML 分类介绍学习</h1>
+    <p class="subtitle">系统掌握 HTML 标签体系 · 点击标签卡片查看代码示例</p>
+  </header>
+
+  <div class="nav-tabs">
+    <button class="nav-tab active" onclick="switchTab('overview')">📋 总览</button>
+    <button class="nav-tab" onclick="switchTab('structure')">🏗️ 文档结构</button>
+    <button class="nav-tab" onclick="switchTab('text')">📝 文本内容</button>
+    <button class="nav-tab" onclick="switchTab('media')">🖼️ 多媒体</button>
+    <button class="nav-tab" onclick="switchTab('form')">📋 表单交互</button>
+    <button class="nav-tab" onclick="switchTab('table')">📊 表格数据</button>
+    <button class="nav-tab" onclick="switchTab('semantic')">🔖 语义化</button>
+    <button class="nav-tab" onclick="switchTab('meta')">⚙️ 元信息</button>
+  </div>
+
+  <!-- OVERVIEW -->
+  <div class="section active" id="tab-overview">
+    <div class="cat-header">
+      <div class="cat-icon" style="background:rgba(79,158,255,0.1);">📋</div>
+      <div>
+        <div class="cat-title" style="color:var(--accent)">HTML 标签分类总览</div>
+        <div class="cat-desc">HTML5 共有约 100+ 个标签，按功能分为以下 7 大类别。点击分类可快速跳转学习。</div>
+      </div>
+    </div>
+
+    <div class="struct">
+      <div class="struct-line"><span class="s-comment">&lt;!-- HTML 文档基本骨架 --&gt;</span></div>
+      <div class="struct-line"><span class="s-tag">&lt;!DOCTYPE html&gt;</span></div>
+      <div class="struct-line"><span class="s-tag">&lt;html</span> <span class="s-attr">lang</span>=<span class="s-val">"zh-CN"</span><span class="s-tag">&gt;</span></div>
+      <div class="struct-line">&nbsp;&nbsp;<span class="s-tag">&lt;head&gt;</span><span class="s-comment">← 元信息区域（不显示）</span></div>
+      <div class="struct-line">&nbsp;&nbsp;&nbsp;&nbsp;<span class="s-tag">&lt;meta</span> <span class="s-attr">charset</span>=<span class="s-val">"UTF-8"</span><span class="s-tag">&gt;</span></div>
+      <div class="struct-line">&nbsp;&nbsp;&nbsp;&nbsp;<span class="s-tag">&lt;title&gt;</span><span class="s-text">页面标题</span><span class="s-tag">&lt;/title&gt;</span></div>
+      <div class="struct-line">&nbsp;&nbsp;<span class="s-tag">&lt;/head&gt;</span></div>
+      <div class="struct-line">&nbsp;&nbsp;<span class="s-tag">&lt;body&gt;</span><span class="s-comment">← 页面内容区域（可见）</span></div>
+      <div class="struct-line">&nbsp;&nbsp;&nbsp;&nbsp;<span class="s-tag">&lt;header&gt;</span><span class="s-text">页头</span><span class="s-tag">&lt;/header&gt;</span></div>
+      <div class="struct-line">&nbsp;&nbsp;&nbsp;&nbsp;<span class="s-tag">&lt;main&gt;</span><span class="s-text">主内容</span><span class="s-tag">&lt;/main&gt;</span></div>
+      <div class="struct-line">&nbsp;&nbsp;&nbsp;&nbsp;<span class="s-tag">&lt;footer&gt;</span><span class="s-text">页脚</span><span class="s-tag">&lt;/footer&gt;</span></div>
+      <div class="struct-line">&nbsp;&nbsp;<span class="s-tag">&lt;/body&gt;</span></div>
+      <div class="struct-line"><span class="s-tag">&lt;/html&gt;</span></div>
+    </div>
+
+    <div class="overview-grid">
+      <div class="ov-card" onclick="switchTab('structure')" style="border-color:rgba(86,217,160,0.3)">
+        <div class="ov-emoji">🏗️</div>
+        <div class="ov-label" style="color:var(--accent3)">文档结构</div>
+        <div class="ov-count">html · head · body · div · span</div>
+      </div>
+      <div class="ov-card" onclick="switchTab('text')" style="border-color:rgba(255,107,107,0.3)">
+        <div class="ov-emoji">📝</div>
+        <div class="ov-label" style="color:var(--accent2)">文本内容</div>
+        <div class="ov-count">h1~h6 · p · a · strong · em</div>
+      </div>
+      <div class="ov-card" onclick="switchTab('media')" style="border-color:rgba(79,158,255,0.3)">
+        <div class="ov-emoji">🖼️</div>
+        <div class="ov-label" style="color:var(--accent)">多媒体</div>
+        <div class="ov-count">img · video · audio · canvas</div>
+      </div>
+      <div class="ov-card" onclick="switchTab('form')" style="border-color:rgba(255,209,102,0.3)">
+        <div class="ov-emoji">📋</div>
+        <div class="ov-label" style="color:var(--accent4)">表单交互</div>
+        <div class="ov-count">form · input · button · select</div>
+      </div>
+      <div class="ov-card" onclick="switchTab('table')" style="border-color:rgba(192,132,252,0.3)">
+        <div class="ov-emoji">📊</div>
+        <div class="ov-label" style="color:var(--accent5)">表格数据</div>
+        <div class="ov-count">table · tr · th · td · thead</div>
+      </div>
+      <div class="ov-card" onclick="switchTab('semantic')" style="border-color:rgba(86,217,160,0.3)">
+        <div class="ov-emoji">🔖</div>
+        <div class="ov-label" style="color:var(--accent3)">语义化</div>
+        <div class="ov-count">article · section · nav · aside</div>
+      </div>
+      <div class="ov-card" onclick="switchTab('meta')" style="border-color:rgba(255,107,107,0.3)">
+        <div class="ov-emoji">⚙️</div>
+        <div class="ov-label" style="color:var(--accent2)">元信息</div>
+        <div class="ov-count">meta · link · script · style</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STRUCTURE -->
+  <div class="section" id="tab-structure">
+    <div class="cat-header">
+      <div class="cat-icon" style="background:rgba(86,217,160,0.1);">🏗️</div>
+      <div>
+        <div class="cat-title" style="color:var(--accent3)">文档结构标签</div>
+        <div class="cat-desc">构建页面骨架的基础标签，定义页面的整体层次与布局容器。</div>
+      </div>
+    </div>
+    <div class="cards">
+      <div class="card" style="--card-accent:var(--accent3)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;html&gt;</div>
+        <div class="card-name">根元素</div>
+        <div class="card-desc">HTML 文档的根标签，所有内容都包裹在其中。lang 属性声明语言。</div>
+        <div class="code-example"><span class="tag">&lt;html</span> <span class="attr">lang</span>=<span class="val">"zh-CN"</span><span class="tag">&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;head&gt;</span>...<span class="tag">&lt;/head&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;body&gt;</span>...<span class="tag">&lt;/body&gt;</span><br><span class="tag">&lt;/html&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+      <div class="card" style="--card-accent:var(--accent3)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;head&gt;</div>
+        <div class="card-name">文档头部</div>
+        <div class="card-desc">包含页面元信息，不在页面中显示。内含 title、meta、link 等标签。</div>
+        <div class="code-example"><span class="tag">&lt;head&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;meta</span> <span class="attr">charset</span>=<span class="val">"UTF-8"</span><span class="tag">&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;title&gt;</span><span class="text">我的网站</span><span class="tag">&lt;/title&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;link</span> <span class="attr">rel</span>=<span class="val">"stylesheet"</span> <span class="attr">href</span>=<span class="val">"style.css"</span><span class="tag">&gt;</span><br><span class="tag">&lt;/head&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+      <div class="card" style="--card-accent:var(--accent3)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;body&gt;</div>
+        <div class="card-name">页面主体</div>
+        <div class="card-desc">包含所有页面可见内容。浏览器渲染的核心区域，支持大量事件属性。</div>
+        <div class="code-example"><span class="tag">&lt;body</span> <span class="attr">onload</span>=<span class="val">"init()"</span><span class="tag">&gt;</span><br>&nbsp;&nbsp;<span class="comment">&lt;!-- 所有可见内容放这里 --&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;h1&gt;</span><span class="text">Hello World</span><span class="tag">&lt;/h1&gt;</span><br><span class="tag">&lt;/body&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+      <div class="card" style="--card-accent:var(--accent3)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;div&gt;</div>
+        <div class="card-name">块级容器</div>
+        <div class="card-desc">通用块级容器，无语义含义，常与 class/id 配合用于布局和样式控制。</div>
+        <div class="code-example"><span class="tag">&lt;div</span> <span class="attr">class</span>=<span class="val">"card"</span><span class="tag">&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;div</span> <span class="attr">class</span>=<span class="val">"card-body"</span><span class="tag">&gt;</span><br>&nbsp;&nbsp;&nbsp;&nbsp;<span class="text">内容区域</span><br>&nbsp;&nbsp;<span class="tag">&lt;/div&gt;</span><br><span class="tag">&lt;/div&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+      <div class="card" style="--card-accent:var(--accent3)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;span&gt;</div>
+        <div class="card-name">行内容器</div>
+        <div class="card-desc">通用行内容器，无语义含义，常用于对文本片段应用样式或脚本。</div>
+        <div class="code-example"><span class="tag">&lt;p&gt;</span><span class="text">价格：</span><span class="tag">&lt;span</span> <span class="attr">class</span>=<span class="val">"price"</span><span class="tag">&gt;</span><span class="text">¥99</span><span class="tag">&lt;/span&gt;</span><span class="tag">&lt;/p&gt;</span><br><br><span class="comment">&lt;!-- span 不换行，div 换行 --&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+      <div class="card" style="--card-accent:var(--accent3)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;hr&gt; / &lt;br&gt;</div>
+        <div class="card-name">分隔与换行</div>
+        <div class="card-desc">hr 渲染水平分割线；br 插入强制换行。两者均为空元素（无闭合标签）。</div>
+        <div class="code-example"><span class="text">第一段文字</span><span class="tag">&lt;br&gt;</span><span class="text">换行后继续</span><br><br><span class="tag">&lt;hr&gt;</span><span class="comment">&lt;!-- 分割线 --&gt;</span><br><br><span class="text">第二段落</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TEXT -->
+  <div class="section" id="tab-text">
+    <div class="cat-header">
+      <div class="cat-icon" style="background:rgba(255,107,107,0.1);">📝</div>
+      <div>
+        <div class="cat-title" style="color:var(--accent2)">文本内容标签</div>
+        <div class="cat-desc">处理文字排版、强调、链接、列表等内容的标签集合。</div>
+      </div>
+    </div>
+    <div class="cards">
+      <div class="card" style="--card-accent:var(--accent2)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;h1&gt; ~ &lt;h6&gt;</div>
+        <div class="card-name">标题层级</div>
+        <div class="card-desc">六级标题，h1 最大最重要，h6 最小。对 SEO 和无障碍访问非常关键，每页只应有一个 h1。</div>
+        <div class="code-example"><span class="tag">&lt;h1&gt;</span><span class="text">一级标题（页面主标题）</span><span class="tag">&lt;/h1&gt;</span><br><span class="tag">&lt;h2&gt;</span><span class="text">二级标题（章节）</span><span class="tag">&lt;/h2&gt;</span><br><span class="tag">&lt;h3&gt;</span><span class="text">三级标题（子章节）</span><span class="tag">&lt;/h3&gt;</span><br><span class="comment">&lt;!-- 不要跳级使用，保持层级顺序 --&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+      <div class="card" style="--card-accent:var(--accent2)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;p&gt;</div>
+        <div class="card-name">段落</div>
+        <div class="card-desc">定义段落文本，浏览器在段落前后自动添加空白间距。是最常用的文本容器。</div>
+        <div class="code-example"><span class="tag">&lt;p&gt;</span><span class="text">这是第一段，浏览器会自动</span><br><span class="text">处理段落间距。</span><span class="tag">&lt;/p&gt;</span><br><span class="tag">&lt;p&gt;</span><span class="text">这是第二段。</span><span class="tag">&lt;/p&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+      <div class="card" style="--card-accent:var(--accent2)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;a&gt;</div>
+        <div class="card-name">超链接</div>
+        <div class="card-desc">创建超链接，href 指定目标地址，target="_blank" 在新标签打开，rel="noopener" 提高安全性。</div>
+        <div class="code-example"><span class="comment">&lt;!-- 外部链接 --&gt;</span><br><span class="tag">&lt;a</span> <span class="attr">href</span>=<span class="val">"https://example.com"</span><br>&nbsp;&nbsp;&nbsp;<span class="attr">target</span>=<span class="val">"_blank"</span><br>&nbsp;&nbsp;&nbsp;<span class="attr">rel</span>=<span class="val">"noopener"</span><span class="tag">&gt;</span><br>&nbsp;&nbsp;<span class="text">访问示例网站</span><br><span class="tag">&lt;/a&gt;</span><br><br><span class="comment">&lt;!-- 页内锚点 --&gt;</span><br><span class="tag">&lt;a</span> <span class="attr">href</span>=<span class="val">"#section1"</span><span class="tag">&gt;</span><span class="text">跳转到第一节</span><span class="tag">&lt;/a&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+      <div class="card" style="--card-accent:var(--accent2)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;strong&gt; / &lt;em&gt;</div>
+        <div class="card-name">强调文本</div>
+        <div class="card-desc">strong 表示重要性（粗体），em 表示强调（斜体）。两者都有语义含义，不同于纯样式的 b/i。</div>
+        <div class="code-example"><span class="tag">&lt;p&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;strong&gt;</span><span class="text">警告：</span><span class="tag">&lt;/strong&gt;</span><br>&nbsp;&nbsp;<span class="text">请</span><span class="tag">&lt;em&gt;</span><span class="text">认真</span><span class="tag">&lt;/em&gt;</span><span class="text">阅读说明。</span><br><span class="tag">&lt;/p&gt;</span><br><br><span class="comment">&lt;!-- strong = 重要; em = 强调 --&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+      <div class="card" style="--card-accent:var(--accent2)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;ul&gt; / &lt;ol&gt; / &lt;li&gt;</div>
+        <div class="card-name">列表</div>
+        <div class="card-desc">ul 无序列表（项目符号），ol 有序列表（编号），li 为列表项。可嵌套使用。</div>
+        <div class="code-example"><span class="tag">&lt;ul&gt;</span><span class="comment">&lt;!-- 无序 --&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;li&gt;</span><span class="text">苹果</span><span class="tag">&lt;/li&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;li&gt;</span><span class="text">香蕉</span><span class="tag">&lt;/li&gt;</span><br><span class="tag">&lt;/ul&gt;</span><br><br><span class="tag">&lt;ol</span> <span class="attr">start</span>=<span class="val">"1"</span><span class="tag">&gt;</span><span class="comment">&lt;!-- 有序 --&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;li&gt;</span><span class="text">第一步</span><span class="tag">&lt;/li&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;li&gt;</span><span class="text">第二步</span><span class="tag">&lt;/li&gt;</span><br><span class="tag">&lt;/ol&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+      <div class="card" style="--card-accent:var(--accent2)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;code&gt; / &lt;pre&gt;</div>
+        <div class="card-name">代码展示</div>
+        <div class="card-desc">code 表示行内代码片段；pre 保留空白和换行，常与 code 配合展示代码块。</div>
+        <div class="code-example"><span class="comment">&lt;!-- 行内代码 --&gt;</span><br><span class="text">使用</span> <span class="tag">&lt;code&gt;</span><span class="text">console.log()</span><span class="tag">&lt;/code&gt;</span> <span class="text">输出</span><br><br><span class="comment">&lt;!-- 代码块 --&gt;</span><br><span class="tag">&lt;pre&gt;&lt;code&gt;</span><br><span class="text">function hello() {</span><br><span class="text">  return "Hi!";</span><br><span class="text">}</span><br><span class="tag">&lt;/code&gt;&lt;/pre&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MEDIA -->
+  <div class="section" id="tab-media">
+    <div class="cat-header">
+      <div class="cat-icon" style="background:rgba(79,158,255,0.1);">🖼️</div>
+      <div>
+        <div class="cat-title" style="color:var(--accent)">多媒体标签</div>
+        <div class="cat-desc">嵌入图片、音频、视频及可编程画布的标签集合。</div>
+      </div>
+    </div>
+    <div class="cards">
+      <div class="card" style="--card-accent:var(--accent)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;img&gt;</div>
+        <div class="card-name">图片</div>
+        <div class="card-desc">嵌入图片，src 为图片路径，alt 为替代文本（无障碍访问必需），可设置 width/height 防止布局抖动。</div>
+        <div class="code-example"><span class="tag">&lt;img</span><br>&nbsp;&nbsp;<span class="attr">src</span>=<span class="val">"photo.jpg"</span><br>&nbsp;&nbsp;<span class="attr">alt</span>=<span class="val">"一只可爱的猫咪"</span><br>&nbsp;&nbsp;<span class="attr">width</span>=<span class="val">"400"</span><br>&nbsp;&nbsp;<span class="attr">height</span>=<span class="val">"300"</span><br>&nbsp;&nbsp;<span class="attr">loading</span>=<span class="val">"lazy"</span><br><span class="tag">&gt;</span><br><span class="comment">&lt;!-- loading=lazy 延迟加载 --&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+      <div class="card" style="--card-accent:var(--accent)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;video&gt;</div>
+        <div class="card-name">视频</div>
+        <div class="card-desc">嵌入视频，支持 controls 显示播放控件，autoplay 自动播放，muted 静音（自动播放必需）。</div>
+        <div class="code-example"><span class="tag">&lt;video</span><br>&nbsp;&nbsp;<span class="attr">src</span>=<span class="val">"movie.mp4"</span><br>&nbsp;&nbsp;<span class="attr">controls</span><br>&nbsp;&nbsp;<span class="attr">width</span>=<span class="val">"640"</span><br>&nbsp;&nbsp;<span class="attr">poster</span>=<span class="val">"cover.jpg"</span><br><span class="tag">&gt;</span><br>&nbsp;&nbsp;<span class="text">浏览器不支持视频播放</span><br><span class="tag">&lt;/video&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+      <div class="card" style="--card-accent:var(--accent)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;audio&gt;</div>
+        <div class="card-name">音频</div>
+        <div class="card-desc">嵌入音频文件，controls 显示播放器，loop 循环播放，可使用多个 source 标签提供不同格式。</div>
+        <div class="code-example"><span class="tag">&lt;audio</span> <span class="attr">controls</span> <span class="attr">loop</span><span class="tag">&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;source</span> <span class="attr">src</span>=<span class="val">"song.mp3"</span><br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="attr">type</span>=<span class="val">"audio/mpeg"</span><span class="tag">&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;source</span> <span class="attr">src</span>=<span class="val">"song.ogg"</span><br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="attr">type</span>=<span class="val">"audio/ogg"</span><span class="tag">&gt;</span><br><span class="tag">&lt;/audio&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+      <div class="card" style="--card-accent:var(--accent)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;canvas&gt;</div>
+        <div class="card-name">画布</div>
+        <div class="card-desc">通过 JavaScript API 绘制 2D/3D 图形的画布元素，用于图表、动画、游戏开发。</div>
+        <div class="code-example"><span class="tag">&lt;canvas</span> <span class="attr">id</span>=<span class="val">"myCanvas"</span><br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="attr">width</span>=<span class="val">"500"</span><br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="attr">height</span>=<span class="val">"300"</span><span class="tag">&gt;</span><br><span class="tag">&lt;/canvas&gt;</span><br><br><span class="comment">// JS 获取画布上下文：</span><br><span class="text">const ctx = canvas.getContext('2d');</span><br><span class="text">ctx.fillRect(0, 0, 100, 100);</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+      <div class="card" style="--card-accent:var(--accent)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;picture&gt;</div>
+        <div class="card-name">响应式图片</div>
+        <div class="card-desc">为不同屏幕尺寸或设备提供多种图片资源，浏览器自动选择最合适的。</div>
+        <div class="code-example"><span class="tag">&lt;picture&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;source</span><br>&nbsp;&nbsp;&nbsp;&nbsp;<span class="attr">media</span>=<span class="val">"(min-width:768px)"</span><br>&nbsp;&nbsp;&nbsp;&nbsp;<span class="attr">srcset</span>=<span class="val">"large.jpg"</span><span class="tag">&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;source</span><br>&nbsp;&nbsp;&nbsp;&nbsp;<span class="attr">media</span>=<span class="val">"(min-width:480px)"</span><br>&nbsp;&nbsp;&nbsp;&nbsp;<span class="attr">srcset</span>=<span class="val">"medium.jpg"</span><span class="tag">&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;img</span> <span class="attr">src</span>=<span class="val">"small.jpg"</span> <span class="attr">alt</span>=<span class="val">"图片"</span><span class="tag">&gt;</span><br><span class="tag">&lt;/picture&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+      <div class="card" style="--card-accent:var(--accent)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;iframe&gt;</div>
+        <div class="card-name">内联框架</div>
+        <div class="card-desc">在页面中嵌入另一个网页，常用于嵌入地图、视频播放器等第三方内容。</div>
+        <div class="code-example"><span class="tag">&lt;iframe</span><br>&nbsp;&nbsp;<span class="attr">src</span>=<span class="val">"https://example.com"</span><br>&nbsp;&nbsp;<span class="attr">width</span>=<span class="val">"600"</span><br>&nbsp;&nbsp;<span class="attr">height</span>=<span class="val">"400"</span><br>&nbsp;&nbsp;<span class="attr">title</span>=<span class="val">"嵌入内容描述"</span><br>&nbsp;&nbsp;<span class="attr">loading</span>=<span class="val">"lazy"</span><br><span class="tag">&gt;&lt;/iframe&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FORM -->
+  <div class="section" id="tab-form">
+    <div class="cat-header">
+      <div class="cat-icon" style="background:rgba(255,209,102,0.1);">📋</div>
+      <div>
+        <div class="cat-title" style="color:var(--accent4)">表单交互标签</div>
+        <div class="cat-desc">收集用户输入、实现人机交互的表单元素集合。</div>
+      </div>
+    </div>
+    <div class="cards">
+      <div class="card" style="--card-accent:var(--accent4)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;form&gt;</div>
+        <div class="card-name">表单容器</div>
+        <div class="card-desc">定义表单区域，action 指定提交地址，method 指定提交方式（get/post）。</div>
+        <div class="code-example"><span class="tag">&lt;form</span><br>&nbsp;&nbsp;<span class="attr">action</span>=<span class="val">"/submit"</span><br>&nbsp;&nbsp;<span class="attr">method</span>=<span class="val">"post"</span><br>&nbsp;&nbsp;<span class="attr">enctype</span>=<span class="val">"multipart/form-data"</span><br><span class="tag">&gt;</span><br>&nbsp;&nbsp;<span class="comment">&lt;!-- 表单元素放这里 --&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;button</span> <span class="attr">type</span>=<span class="val">"submit"</span><span class="tag">&gt;</span><span class="text">提交</span><span class="tag">&lt;/button&gt;</span><br><span class="tag">&lt;/form&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+      <div class="card" style="--card-accent:var(--accent4)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;input&gt;</div>
+        <div class="card-name">输入框</div>
+        <div class="card-desc">最通用的表单控件，type 属性决定类型：text/email/password/number/checkbox/radio/file/date 等。</div>
+        <div class="code-example"><span class="comment">&lt;!-- 文本 --&gt;</span><br><span class="tag">&lt;input</span> <span class="attr">type</span>=<span class="val">"text"</span> <span class="attr">placeholder</span>=<span class="val">"姓名"</span><span class="tag">&gt;</span><br><br><span class="comment">&lt;!-- 邮箱（自动验证格式）--&gt;</span><br><span class="tag">&lt;input</span> <span class="attr">type</span>=<span class="val">"email"</span> <span class="attr">required</span><span class="tag">&gt;</span><br><br><span class="comment">&lt;!-- 复选框 --&gt;</span><br><span class="tag">&lt;input</span> <span class="attr">type</span>=<span class="val">"checkbox"</span> <span class="attr">checked</span><span class="tag">&gt;</span><span class="text">记住我</span><br><br><span class="comment">&lt;!-- 文件上传 --&gt;</span><br><span class="tag">&lt;input</span> <span class="attr">type</span>=<span class="val">"file"</span> <span class="attr">accept</span>=<span class="val">"image/*"</span><span class="tag">&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+      <div class="card" style="--card-accent:var(--accent4)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;button&gt;</div>
+        <div class="card-name">按钮</div>
+        <div class="card-desc">可点击按钮，type 为 submit/reset/button。支持内嵌 HTML 内容，比 input[type=button] 更灵活。</div>
+        <div class="code-example"><span class="comment">&lt;!-- 提交按钮 --&gt;</span><br><span class="tag">&lt;button</span> <span class="attr">type</span>=<span class="val">"submit"</span><span class="tag">&gt;</span><span class="text">登录</span><span class="tag">&lt;/button&gt;</span><br><br><span class="comment">&lt;!-- 普通按钮（JS控制）--&gt;</span><br><span class="tag">&lt;button</span> <span class="attr">type</span>=<span class="val">"button"</span><br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="attr">onclick</span>=<span class="val">"save()"</span><span class="tag">&gt;</span><br>&nbsp;&nbsp;<span class="text">💾 保存</span><br><span class="tag">&lt;/button&gt;</span><br><br><span class="comment">&lt;!-- 禁用状态 --&gt;</span><br><span class="tag">&lt;button</span> <span class="attr">disabled</span><span class="tag">&gt;</span><span class="text">不可用</span><span class="tag">&lt;/button&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+      <div class="card" style="--card-accent:var(--accent4)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;select&gt;</div>
+        <div class="card-name">下拉选择</div>
+        <div class="card-desc">创建下拉菜单，option 为选项，optgroup 分组选项，multiple 支持多选。</div>
+        <div class="code-example"><span class="tag">&lt;select</span> <span class="attr">name</span>=<span class="val">"city"</span><span class="tag">&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;optgroup</span> <span class="attr">label</span>=<span class="val">"华南"</span><span class="tag">&gt;</span><br>&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag">&lt;option</span> <span class="attr">value</span>=<span class="val">"gz"</span><span class="tag">&gt;</span><span class="text">广州</span><span class="tag">&lt;/option&gt;</span><br>&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag">&lt;option</span> <span class="attr">value</span>=<span class="val">"sz"</span> <span class="attr">selected</span><span class="tag">&gt;</span><span class="text">深圳</span><span class="tag">&lt;/option&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;/optgroup&gt;</span><br><span class="tag">&lt;/select&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+      <div class="card" style="--card-accent:var(--accent4)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;textarea&gt;</div>
+        <div class="card-name">多行文本</div>
+        <div class="card-desc">多行文本输入框，rows/cols 设置初始大小，可通过 CSS resize 控制是否允许调整大小。</div>
+        <div class="code-example"><span class="tag">&lt;textarea</span><br>&nbsp;&nbsp;<span class="attr">name</span>=<span class="val">"comment"</span><br>&nbsp;&nbsp;<span class="attr">rows</span>=<span class="val">"5"</span><br>&nbsp;&nbsp;<span class="attr">cols</span>=<span class="val">"40"</span><br>&nbsp;&nbsp;<span class="attr">placeholder</span>=<span class="val">"请输入评论..."</span><br>&nbsp;&nbsp;<span class="attr">maxlength</span>=<span class="val">"500"</span><br><span class="tag">&gt;&lt;/textarea&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+      <div class="card" style="--card-accent:var(--accent4)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;label&gt;</div>
+        <div class="card-name">表单标签</div>
+        <div class="card-desc">为表单控件提供说明文字，for 属性绑定对应 input 的 id，点击 label 可聚焦/触发对应控件。</div>
+        <div class="code-example"><span class="comment">&lt;!-- 方式1：for + id 绑定 --&gt;</span><br><span class="tag">&lt;label</span> <span class="attr">for</span>=<span class="val">"email"</span><span class="tag">&gt;</span><span class="text">邮箱地址</span><span class="tag">&lt;/label&gt;</span><br><span class="tag">&lt;input</span> <span class="attr">id</span>=<span class="val">"email"</span> <span class="attr">type</span>=<span class="val">"email"</span><span class="tag">&gt;</span><br><br><span class="comment">&lt;!-- 方式2：包裹绑定 --&gt;</span><br><span class="tag">&lt;label&gt;</span><br>&nbsp;&nbsp;<span class="text">记住密码</span><br>&nbsp;&nbsp;<span class="tag">&lt;input</span> <span class="attr">type</span>=<span class="val">"checkbox"</span><span class="tag">&gt;</span><br><span class="tag">&lt;/label&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TABLE -->
+  <div class="section" id="tab-table">
+    <div class="cat-header">
+      <div class="cat-icon" style="background:rgba(192,132,252,0.1);">📊</div>
+      <div>
+        <div class="cat-title" style="color:var(--accent5)">表格数据标签</div>
+        <div class="cat-desc">用于展示结构化数据的表格元素，注意表格应仅用于数据展示，不应用于页面布局。</div>
+      </div>
+    </div>
+    <div class="cards">
+      <div class="card" style="--card-accent:var(--accent5)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;table&gt;</div>
+        <div class="card-name">表格完整结构</div>
+        <div class="card-desc">table 为容器，thead/tbody/tfoot 语义分组，tr 为行，th 为表头单元格，td 为数据单元格。</div>
+        <div class="code-example"><span class="tag">&lt;table&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;thead&gt;</span><br>&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag">&lt;tr&gt;</span><br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag">&lt;th&gt;</span><span class="text">姓名</span><span class="tag">&lt;/th&gt;</span><br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag">&lt;th&gt;</span><span class="text">年龄</span><span class="tag">&lt;/th&gt;</span><br>&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag">&lt;/tr&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;/thead&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;tbody&gt;</span><br>&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag">&lt;tr&gt;</span><br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag">&lt;td&gt;</span><span class="text">张三</span><span class="tag">&lt;/td&gt;</span><br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag">&lt;td&gt;</span><span class="text">25</span><span class="tag">&lt;/td&gt;</span><br>&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag">&lt;/tr&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;/tbody&gt;</span><br><span class="tag">&lt;/table&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+      <div class="card" style="--card-accent:var(--accent5)" onclick="toggleCard(this)">
+        <div class="card-tag">colspan / rowspan</div>
+        <div class="card-name">单元格合并</div>
+        <div class="card-desc">colspan 合并列，rowspan 合并行，实现复杂表格布局。合并后被覆盖的单元格需删除。</div>
+        <div class="code-example"><span class="tag">&lt;table&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;tr&gt;</span><br>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">&lt;!-- 横跨 2 列 --&gt;</span><br>&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag">&lt;td</span> <span class="attr">colspan</span>=<span class="val">"2"</span><span class="tag">&gt;</span><span class="text">合并两列</span><span class="tag">&lt;/td&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;/tr&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;tr&gt;</span><br>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">&lt;!-- 纵跨 2 行 --&gt;</span><br>&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag">&lt;td</span> <span class="attr">rowspan</span>=<span class="val">"2"</span><span class="tag">&gt;</span><span class="text">合并两行</span><span class="tag">&lt;/td&gt;</span><br>&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag">&lt;td&gt;</span><span class="text">B</span><span class="tag">&lt;/td&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;/tr&gt;</span><br><span class="tag">&lt;/table&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+      <div class="card" style="--card-accent:var(--accent5)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;caption&gt;</div>
+        <div class="card-name">表格标题</div>
+        <div class="card-desc">为表格提供标题或说明，必须作为 table 的第一个子元素，对无障碍访问很重要。</div>
+        <div class="code-example"><span class="tag">&lt;table&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;caption&gt;</span><span class="text">2024年销售数据统计</span><span class="tag">&lt;/caption&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;thead&gt;</span>...<span class="tag">&lt;/thead&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;tbody&gt;</span>...<span class="tag">&lt;/tbody&gt;</span><br><span class="tag">&lt;/table&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SEMANTIC -->
+  <div class="section" id="tab-semantic">
+    <div class="cat-header">
+      <div class="cat-icon" style="background:rgba(86,217,160,0.1);">🔖</div>
+      <div>
+        <div class="cat-title" style="color:var(--accent3)">语义化标签（HTML5）</div>
+        <div class="cat-desc">HTML5 新增的语义化结构标签，让代码更具可读性，对 SEO 和无障碍访问至关重要。</div>
+      </div>
+    </div>
+    <div class="cards">
+      <div class="card" style="--card-accent:var(--accent3)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;header&gt;</div>
+        <div class="card-name">页头 / 区块头</div>
+        <div class="card-desc">表示页面或区块的头部，通常包含导航、logo、搜索栏。可在 article/section 内重复使用。</div>
+        <div class="code-example"><span class="tag">&lt;header&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;nav&gt;</span><br>&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag">&lt;a</span> <span class="attr">href</span>=<span class="val">"/"</span><span class="tag">&gt;</span><span class="text">首页</span><span class="tag">&lt;/a&gt;</span><br>&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag">&lt;a</span> <span class="attr">href</span>=<span class="val">"/about"</span><span class="tag">&gt;</span><span class="text">关于</span><span class="tag">&lt;/a&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;/nav&gt;</span><br><span class="tag">&lt;/header&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+      <div class="card" style="--card-accent:var(--accent3)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;nav&gt;</div>
+        <div class="card-name">导航区域</div>
+        <div class="card-desc">定义导航链接集合，用于主导航菜单、面包屑导航等。屏幕阅读器会识别此区域。</div>
+        <div class="code-example"><span class="tag">&lt;nav</span> <span class="attr">aria-label</span>=<span class="val">"主导航"</span><span class="tag">&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;ul&gt;</span><br>&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag">&lt;li&gt;&lt;a</span> <span class="attr">href</span>=<span class="val">"/"</span><span class="tag">&gt;</span><span class="text">首页</span><span class="tag">&lt;/a&gt;&lt;/li&gt;</span><br>&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag">&lt;li&gt;&lt;a</span> <span class="attr">href</span>=<span class="val">"/blog"</span><span class="tag">&gt;</span><span class="text">博客</span><span class="tag">&lt;/a&gt;&lt;/li&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;/ul&gt;</span><br><span class="tag">&lt;/nav&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+      <div class="card" style="--card-accent:var(--accent3)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;main&gt;</div>
+        <div class="card-name">主内容区</div>
+        <div class="card-desc">页面的主要内容区域，每个页面只能有一个 main 元素，不应包含重复性内容如导航和页脚。</div>
+        <div class="code-example"><span class="tag">&lt;body&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;header&gt;</span>...<span class="tag">&lt;/header&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;main&gt;</span><br>&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">&lt;!-- 页面核心内容 --&gt;</span><br>&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag">&lt;h1&gt;</span><span class="text">文章标题</span><span class="tag">&lt;/h1&gt;</span><br>&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag">&lt;article&gt;</span>...<span class="tag">&lt;/article&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;/main&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;footer&gt;</span>...<span class="tag">&lt;/footer&gt;</span><br><span class="tag">&lt;/body&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+      <div class="card" style="--card-accent:var(--accent3)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;article&gt;</div>
+        <div class="card-name">独立内容块</div>
+        <div class="card-desc">表示独立的内容块，可脱离页面上下文独立分发，如博客文章、新闻、评论、论坛帖子。</div>
+        <div class="code-example"><span class="tag">&lt;article&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;header&gt;</span><br>&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag">&lt;h2&gt;</span><span class="text">博客标题</span><span class="tag">&lt;/h2&gt;</span><br>&nbsp;&nbsp;&nbsp;&nbsp;<span class="tag">&lt;time</span> <span class="attr">datetime</span>=<span class="val">"2024-01-15"</span><span class="tag">&gt;</span><br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="text">2024年1月15日</span><span class="tag">&lt;/time&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;/header&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;p&gt;</span><span class="text">文章内容...</span><span class="tag">&lt;/p&gt;</span><br><span class="tag">&lt;/article&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+      <div class="card" style="--card-accent:var(--accent3)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;section&gt;</div>
+        <div class="card-name">内容章节</div>
+        <div class="card-desc">定义文档中的通用章节，通常有标题。与 div 的区别在于 section 代表有主题的内容分组。</div>
+        <div class="code-example"><span class="tag">&lt;section</span> <span class="attr">id</span>=<span class="val">"features"</span><span class="tag">&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;h2&gt;</span><span class="text">产品特点</span><span class="tag">&lt;/h2&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;p&gt;</span><span class="text">本产品具有以下优势...</span><span class="tag">&lt;/p&gt;</span><br><span class="tag">&lt;/section&gt;</span><br><br><span class="tag">&lt;section</span> <span class="attr">id</span>=<span class="val">"pricing"</span><span class="tag">&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;h2&gt;</span><span class="text">价格方案</span><span class="tag">&lt;/h2&gt;</span><br><span class="tag">&lt;/section&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+      <div class="card" style="--card-accent:var(--accent3)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;aside&gt; / &lt;footer&gt;</div>
+        <div class="card-name">侧栏与页脚</div>
+        <div class="card-desc">aside 表示与主内容相关但独立的内容（侧边栏、广告、引用）；footer 表示页脚，含版权、联系信息等。</div>
+        <div class="code-example"><span class="tag">&lt;aside&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;h3&gt;</span><span class="text">相关文章</span><span class="tag">&lt;/h3&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;ul&gt;</span>...<span class="tag">&lt;/ul&gt;</span><br><span class="tag">&lt;/aside&gt;</span><br><br><span class="tag">&lt;footer&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;p&gt;</span><span class="text">© 2024 公司名称</span><span class="tag">&lt;/p&gt;</span><br>&nbsp;&nbsp;<span class="tag">&lt;nav&gt;</span><span class="text">底部导航</span><span class="tag">&lt;/nav&gt;</span><br><span class="tag">&lt;/footer&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- META -->
+  <div class="section" id="tab-meta">
+    <div class="cat-header">
+      <div class="cat-icon" style="background:rgba(255,107,107,0.1);">⚙️</div>
+      <div>
+        <div class="cat-title" style="color:var(--accent2)">元信息标签</div>
+        <div class="cat-desc">位于 &lt;head&gt; 内的标签，定义文档元数据，控制字符集、SEO、样式和脚本加载。</div>
+      </div>
+    </div>
+    <div class="cards">
+      <div class="card" style="--card-accent:var(--accent2)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;meta&gt;</div>
+        <div class="card-name">元数据</div>
+        <div class="card-desc">定义文档元数据，包括字符集、视口、SEO 描述、Open Graph 社交分享等关键配置。</div>
+        <div class="code-example"><span class="comment">&lt;!-- 字符集 --&gt;</span><br><span class="tag">&lt;meta</span> <span class="attr">charset</span>=<span class="val">"UTF-8"</span><span class="tag">&gt;</span><br><br><span class="comment">&lt;!-- 响应式视口 --&gt;</span><br><span class="tag">&lt;meta</span> <span class="attr">name</span>=<span class="val">"viewport"</span><br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="attr">content</span>=<span class="val">"width=device-width,</span><br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="val">initial-scale=1"</span><span class="tag">&gt;</span><br><br><span class="comment">&lt;!-- SEO 描述 --&gt;</span><br><span class="tag">&lt;meta</span> <span class="attr">name</span>=<span class="val">"description"</span><br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="attr">content</span>=<span class="val">"页面描述..."</span><span class="tag">&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+      <div class="card" style="--card-accent:var(--accent2)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;link&gt;</div>
+        <div class="card-name">外部资源链接</div>
+        <div class="card-desc">链接外部资源，最常用于引入 CSS 样式表，也用于网站图标、预加载资源等。</div>
+        <div class="code-example"><span class="comment">&lt;!-- CSS 样式表 --&gt;</span><br><span class="tag">&lt;link</span> <span class="attr">rel</span>=<span class="val">"stylesheet"</span><br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="attr">href</span>=<span class="val">"style.css"</span><span class="tag">&gt;</span><br><br><span class="comment">&lt;!-- 网站图标 --&gt;</span><br><span class="tag">&lt;link</span> <span class="attr">rel</span>=<span class="val">"icon"</span><br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="attr">href</span>=<span class="val">"favicon.ico"</span><span class="tag">&gt;</span><br><br><span class="comment">&lt;!-- 预加载关键资源 --&gt;</span><br><span class="tag">&lt;link</span> <span class="attr">rel</span>=<span class="val">"preload"</span><br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="attr">href</span>=<span class="val">"hero.jpg"</span><br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="attr">as</span>=<span class="val">"image"</span><span class="tag">&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+      <div class="card" style="--card-accent:var(--accent2)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;script&gt;</div>
+        <div class="card-name">JavaScript 脚本</div>
+        <div class="card-desc">嵌入或引用 JS 脚本。defer 延迟执行（推荐），async 异步加载，type="module" 支持 ES 模块。</div>
+        <div class="code-example"><span class="comment">&lt;!-- 外部脚本（推荐放 body 末）--&gt;</span><br><span class="tag">&lt;script</span> <span class="attr">src</span>=<span class="val">"app.js"</span> <span class="attr">defer</span><span class="tag">&gt;&lt;/script&gt;</span><br><br><span class="comment">&lt;!-- ES 模块 --&gt;</span><br><span class="tag">&lt;script</span> <span class="attr">type</span>=<span class="val">"module"</span><span class="tag">&gt;</span><br>&nbsp;&nbsp;<span class="text">import { init } from './main.js';</span><br>&nbsp;&nbsp;<span class="text">init();</span><br><span class="tag">&lt;/script&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+      <div class="card" style="--card-accent:var(--accent2)" onclick="toggleCard(this)">
+        <div class="card-tag">&lt;style&gt;</div>
+        <div class="card-name">内嵌样式</div>
+        <div class="card-desc">在 HTML 文档中直接嵌入 CSS 样式。适合小型页面，大型项目建议使用外部 link 引入。</div>
+        <div class="code-example"><span class="tag">&lt;style&gt;</span><br>&nbsp;&nbsp;<span class="text">body {</span><br>&nbsp;&nbsp;&nbsp;&nbsp;<span class="attr">font-family</span>: <span class="val">sans-serif</span>;<br>&nbsp;&nbsp;&nbsp;&nbsp;<span class="attr">background</span>: <span class="val">#f0f0f0</span>;<br>&nbsp;&nbsp;<span class="text">}</span><br>&nbsp;&nbsp;<span class="text">.highlight {</span><br>&nbsp;&nbsp;&nbsp;&nbsp;<span class="attr">color</span>: <span class="val">red</span>;<br>&nbsp;&nbsp;<span class="text">}</span><br><span class="tag">&lt;/style&gt;</span></div>
+        <div class="expand-hint">▶ 点击展开示例</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  function switchTab(name) {
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+    const tabs = document.querySelectorAll('.nav-tab');
+    const map = { overview: 0, structure: 1, text: 2, media: 3, form: 4, table: 5, semantic: 6, meta: 7 };
+    if (tabs[map[name]]) tabs[map[name]].classList.add('active');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function toggleCard(card) {
+    const wasExpanded = card.classList.contains('expanded');
+    // Close all in same section
+    card.closest('.cards').querySelectorAll('.card').forEach(c => {
+      c.classList.remove('expanded');
+      const hint = c.querySelector('.expand-hint');
+      if (hint) hint.textContent = '▶ 点击展开示例';
+    });
+    if (!wasExpanded) {
+      card.classList.add('expanded');
+      const hint = card.querySelector('.expand-hint');
+      if (hint) hint.textContent = '▼ 点击收起示例';
+    }
+  }
+</script>
+</body>
+</html>
