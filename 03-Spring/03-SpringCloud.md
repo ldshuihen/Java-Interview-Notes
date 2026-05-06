@@ -6055,7 +6055,7 @@ public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
 4. Spring Boot Actuator 与 Spring Cloud Metrics 如何结合使用？
 5. Prometheus 与 Grafana 在微服务监控中的作用？
 
-### 链路追踪
+### 链路追踪现状
 
 在国内 Spring 生态里做**链路追踪（Distributed Tracing）**，主流方案基本已经从“Spring Cloud Sleuth + Zipkin”逐步迁移到 **OpenTelemetry + APM 平台（SkyWalking / Jaeger）** 的组合。
 
@@ -6541,6 +6541,225 @@ Web UI 可以看到：
 👉 OAP Server 如何存储 Trace 数据（ES 结构）
 👉 TraceId 在 ES 里是怎么索引的（面试高级题）
 
+### SkyWalking 场景
+
+可以，而且你列的这几个场景基本就是 Apache SkyWalking 的“主战场”。但别把它当成万能监控，它有强项也有边界。我按你的场景逐个说清楚它能做到什么、做到什么程度。
+
+------
+
+#### 一、SpringBoot / SpringCloud 微服务项目
+
+👉 **完全适配（核心场景）**
+
+SkyWalking 对以下组件是“无侵入支持”：
+
+- Spring Boot（MVC / WebFlux）
+- Spring Cloud（Gateway / Feigin / RestTemplate）
+- MyBatis / JDBC
+
+你只需要：
+
+```bash
+-javaagent:skywalking-agent.jar
+```
+
+👉 就能自动拿到：
+
+- 接口调用
+- 服务间调用
+- SQL 执行
+
+✔ 结论：**这是它设计的主要使用场景之一**
+
+------
+
+#### 二、排查接口响应慢的原因
+
+👉 **这是 SkyWalking 最强的能力**
+
+它会把一次请求拆成完整链路，比如：
+
+```text
+请求入口（Gateway）  20ms
+  → order-service     150ms
+      → user-service   50ms
+      → MyBatis SQL   80ms
+```
+
+你可以直接看到：
+
+- 哪个服务慢
+- 哪个方法慢
+- 哪条 SQL 慢
+
+👉 在 UI 的 Trace 页面可以逐层展开
+
+✔ 结论：**定位慢接口非常高效（远强于纯日志）**
+
+------
+
+#### 三、查看微服务之间的调用关系
+
+👉 **这是它的“招牌功能”——拓扑图**
+
+SkyWalking 会自动生成：
+
+```text
+gateway → order → user → db
+```
+
+并且带：
+
+- 调用次数
+- 平均耗时
+- 成功率
+
+👉 在 UI 的 **Topology（拓扑图）** 页面
+
+✔ 结论：**非常直观，适合架构分析 & 问题定位**
+
+------
+
+#### 四、监控调用成功率和耗时分布
+
+👉 **支持，但要理解“粒度”**
+
+SkyWalking 提供：
+
+##### 1️⃣ 成功率（SLA）
+
+- 每个接口成功率
+- 每个服务成功率
+
+------
+
+##### 2️⃣ 响应时间（RT）
+
+- 平均 RT
+- P95 / P99
+
+------
+
+##### 3️⃣ 吞吐量（QPS）
+
+------
+
+👉 在 UI 的 Metrics 页面可以看到
+
+✔ 结论：**可以做服务健康监控，但不等于 Prometheus 那种全指标监控**
+
+------
+
+#### 五、它还能帮你做什么（你可能没意识到）
+
+##### 🔥 1. SQL 级别分析
+
+你之前那个问题：
+
+```text
+MyBatisSystemException
+```
+
+👉 用 SkyWalking 可以直接看到：
+
+- 哪条 SQL
+- 参数
+- 执行时间
+- 是否报错
+
+------
+
+##### 🔥 2. 日志 + Trace 打通
+
+加上：
+
+```xml
+%X{traceId}
+```
+
+👉 可以做到：
+
+```text
+日志 → traceId → SkyWalking → 完整链路
+```
+
+------
+
+##### 🔥 3. 异常定位
+
+你可以看到：
+
+- 异常发生在哪一层（controller / service / dao）
+- 上下游调用路径
+
+------
+
+#### 六、但也要说清楚它的“边界”（很多人误用）
+
+##### ❌ 1. 不是完整监控系统
+
+它不是：
+
+- 服务器监控（CPU / 内存）
+- 容器监控
+
+👉 这些要配：
+
+- Prometheus + Grafana
+
+------
+
+##### ❌ 2. 不适合业务指标统计
+
+比如：
+
+- 订单数
+- GMV
+
+👉 用埋点系统（如埋点日志 / BI）
+
+------
+
+##### ❌ 3. 高并发下有性能开销
+
+一般：
+
+- 3% ~ 10% 性能损耗
+
+👉 生产环境要评估
+
+------
+
+#### 七、结合你当前情况（很关键）
+
+你现在在排查：
+
+- MyBatis 异常
+- 接口问题
+- 微服务调用
+
+👉 SkyWalking 可以帮你做到：
+
+✔ 精确定位哪条 SQL 出问题
+✔ 看调用链是否断
+✔ 找慢接口瓶颈
+
+👉 比你现在“看日志 + 猜”效率高很多
+
+------
+
+#### 总结一句话
+
+👉 **你列的这 4 个场景，SkyWalking 不仅能做，而且是它最核心的使用场景。**
+
+------
+
+如果你愿意，我可以帮你做一版：
+
+👉 **“SpringCloud + Gateway + MyBatis + SkyWalking 实战排查案例”**
+
+直接用你现在的异常（MyBatisSystemException）做一次真实链路分析，让你彻底掌握 👍
+
 ### Spring 集成 Apache SkyWalking
 
 在 Spring（尤其是 Spring Boot / Spring Cloud）中集成 Apache SkyWalking，核心思想其实很简单：
@@ -6787,6 +7006,550 @@ SkyWalking UI
 如果你想继续深入，我可以帮你补一版👇：
 
 👉 **“SkyWalking + Spring Cloud Alibaba 全链路压测 + TraceId 贯穿设计（面试高级版）”**
+
+
+
+### IDEA 使用Apache SkyWalking
+
+👉 **启动后端（OAP） → 配置 Agent → 在 IDEA 挂载 → 访问 UI 看链路**
+
+我给你一套**从 0 到能看到链路的完整步骤（可直接照做）**。
+
+------
+
+#### 一、准备环境（只做一次）
+
+##### 1️⃣ 下载 SkyWalking
+
+去官网下发行版（建议 9.x+），解压后目录：
+
+```bash
+apache-skywalking-apm-bin/
+  ├── agent/
+  ├── bin/
+  └── webapp/
+```
+
+------
+
+##### 2️⃣ 启动 OAP（后端服务）
+
+###### 👉 方式1：直接启动（最简单）
+
+Windows：
+
+```bash
+bin\startup.bat
+```
+
+Linux / Mac：
+
+```bash
+bin/startup.sh
+```
+
+------
+
+###### 👉 默认端口
+
+| 组件     | 端口  |
+| -------- | ----- |
+| OAP gRPC | 11800 |
+| OAP HTTP | 12800 |
+| UI       | 8080  |
+
+------
+
+###### 3️⃣ 打开 UI
+
+浏览器访问：
+
+```bash
+http://localhost:8080
+```
+
+👉 如果打不开，说明 OAP 没启动成功
+
+------
+
+#### 二、IDEA 配置 Agent（核心步骤）
+
+##### 1️⃣ 打开运行配置
+
+```bash
+Run → Edit Configurations
+```
+
+找到你的 Spring Boot 启动项
+
+------
+
+##### 2️⃣ 在 VM options 添加
+
+```bash
+-javaagent:D:\skywalking\agent\skywalking-agent.jar
+-Dskywalking.agent.service_name=order-service
+-Dskywalking.collector.backend_service=127.0.0.1:11800
+```
+
+------
+
+##### 3️⃣ 参数解释（必须懂）
+
+| 参数            | 含义              |
+| --------------- | ----------------- |
+| -javaagent      | 挂载 Agent        |
+| service_name    | 服务名（UI 展示） |
+| backend_service | SkyWalking 后端   |
+
+------
+
+#### 三、启动服务验证
+
+##### 1️⃣ 启动 Spring Boot
+
+在 IDEA 点击 Run
+
+------
+
+##### 2️⃣ 控制台关键日志
+
+看到：
+
+```bash
+SkyWalking Agent initialized successfully
+```
+
+👉 才算成功
+
+------
+
+##### 3️⃣ 访问接口
+
+比如：
+
+```bash
+http://localhost:8081/order/create
+```
+
+------
+
+##### 4️⃣ 打开 UI 看结果
+
+你会看到：
+
+- 服务：order-service
+- 调用链（Trace）
+- 接口耗时（RT）
+- SQL（如果用 MyBatis）
+
+------
+
+#### 四、Spring Cloud 场景（重点）
+
+如果你是微服务：
+
+```bash
+gateway → order → user → db
+```
+
+👉 每个服务都要加：
+
+```bash
+-Dskywalking.agent.service_name=xxx
+```
+
+例如：
+
+```bash
+gateway-service
+order-service
+user-service
+```
+
+------
+
+#### 五、你必须验证的 5 个点（避免踩坑）
+
+##### ✅ 1. OAP 是否启动成功
+
+```bash
+netstat -ano | findstr 11800
+```
+
+------
+
+##### ❌ 2. Agent 路径错误（最常见）
+
+```bash
+-javaagent:D:\xxx\skywalking-agent.jar
+```
+
+👉 必须是**绝对路径**
+
+------
+
+##### ❌ 3. 端口不一致
+
+```bash
+-Dskywalking.collector.backend_service=127.0.0.1:11800
+```
+
+------
+
+##### ❌ 4. service_name 全一样
+
+👉 会导致 UI 混乱
+
+------
+
+##### ❌ 5. 没有请求流量
+
+👉 SkyWalking 是“被动采集”，必须调用接口才有数据
+
+------
+
+#### 六、进阶配置（强烈建议）
+
+##### 1️⃣ 日志打印 traceId
+
+logback.xml：
+
+```xml
+<pattern>%d{yyyy-MM-dd HH:mm:ss} [%X{traceId}] %msg%n</pattern>
+```
+
+👉 日志和链路打通
+
+------
+
+##### 2️⃣ 忽略无用接口
+
+```properties
+skywalking.trace.ignore_path=/actuator,/health
+```
+
+------
+
+##### 3️⃣ 自定义埋点
+
+```java
+import org.apache.skywalking.apm.toolkit.trace.Trace;
+
+@Trace
+public void business() {
+}
+```
+
+------
+
+#### 七、和你当前问题的关系（很关键）
+
+你之前遇到：
+
+```text
+MyBatisSystemException
+```
+
+👉 接入 SkyWalking 后你可以直接看到：
+
+- 哪个接口触发
+- 哪条 SQL 执行
+- 哪一步报错
+- 耗时在哪
+
+👉 比纯日志排查效率高很多
+
+------
+
+#### 八、最终最简流程总结
+
+```bash
+1. 启动 SkyWalking（OAP + UI）
+2. IDEA 配置 -javaagent
+3. 启动 Spring Boot
+4. 调接口
+5. UI 查看链路
+```
+
+------
+
+#### 如果你现在卡住了
+
+你可以把下面信息贴出来，我帮你直接定位：
+
+- IDEA 的 VM options
+- 启动日志（前 50 行）
+- UI 是否有服务
+
+
+
+
+
+### 用 Docker 跑 Apache SkyWalking 的 OAP
+
+（后端服务）其实不复杂，但很多人会卡在**端口、存储、网络**这三件事。我给你一套**能直接用 + 可扩展**的配置。
+
+------
+
+#### 一、最简单可运行版本（快速起）
+
+👉 适合本地开发 / IDEA 调试
+
+```bash
+docker run -d \
+  --name skywalking-oap \
+  -p 11800:11800 \
+  -p 12800:12800 \
+  apache/skywalking-oap-server
+```
+
+------
+
+##### 启动 UI（必须）
+
+```bash
+docker run -d \
+  --name skywalking-ui \
+  -p 8080:8080 \
+  -e SW_OAP_ADDRESS=http://localhost:12800 \
+  apache/skywalking-ui
+```
+
+------
+
+##### 验证
+
+浏览器访问：
+
+```bash
+http://localhost:8080
+```
+
+👉 能打开 UI 就说明 OAP 正常
+
+------
+
+#### 二、你在 IDEA 里要这样连 OAP
+
+VM options：
+
+```bash
+-javaagent:D:\skywalking\agent\skywalking-agent.jar
+-Dskywalking.agent.service_name=order-service
+-Dskywalking.collector.backend_service=127.0.0.1:11800
+```
+
+👉 注意：
+
+- 11800 = gRPC（Agent 用）
+- 12800 = HTTP（UI 用）
+
+------
+
+#### 三、推荐版本（带存储，避免数据丢失）
+
+默认 OAP 用的是 **内存存储**（重启就没了）
+
+👉 建议用 Elasticsearch
+
+------
+
+##### 1️⃣ 启动 ES
+
+```bash
+docker run -d \
+  --name es \
+  -p 9200:9200 \
+  -e "discovery.type=single-node" \
+  elasticsearch:7.17.9
+```
+
+------
+
+##### 2️⃣ 启动 OAP（连接 ES）
+
+```bash
+docker run -d \
+  --name skywalking-oap \
+  -p 11800:11800 \
+  -p 12800:12800 \
+  -e SW_STORAGE=elasticsearch \
+  -e SW_STORAGE_ES_CLUSTER_NODES=es:9200 \
+  --link es \
+  apache/skywalking-oap-server
+```
+
+------
+
+##### 3️⃣ UI 一样
+
+```bash
+docker run -d \
+  --name skywalking-ui \
+  -p 8080:8080 \
+  -e SW_OAP_ADDRESS=http://localhost:12800 \
+  apache/skywalking-ui
+```
+
+------
+
+#### 四、推荐用 docker-compose（更规范）
+
+创建 `docker-compose.yml`：
+
+```yaml
+version: '3.8'
+
+services:
+  es:
+    image: elasticsearch:7.17.9
+    container_name: es
+    environment:
+      - discovery.type=single-node
+    ports:
+      - "9200:9200"
+
+  oap:
+    image: apache/skywalking-oap-server
+    container_name: skywalking-oap
+    depends_on:
+      - es
+    ports:
+      - "11800:11800"
+      - "12800:12800"
+    environment:
+      - SW_STORAGE=elasticsearch
+      - SW_STORAGE_ES_CLUSTER_NODES=es:9200
+
+  ui:
+    image: apache/skywalking-ui
+    container_name: skywalking-ui
+    depends_on:
+      - oap
+    ports:
+      - "8080:8080"
+    environment:
+      - SW_OAP_ADDRESS=http://oap:12800
+```
+
+启动：
+
+```bash
+docker-compose up -d
+```
+
+------
+
+#### 五、常见坑（你大概率会遇到）
+
+##### ❌ 1. Agent 连不上 OAP
+
+错误写法：
+
+```bash
+-Dskywalking.collector.backend_service=localhost:11800
+```
+
+👉 如果你的服务也在 Docker 里，这样是错的！
+
+应该：
+
+```bash
+-Dskywalking.collector.backend_service=oap:11800
+```
+
+------
+
+##### ❌ 2. ES 启动失败
+
+常见问题：
+
+- 内存不足
+- vm.max_map_count 太小
+
+解决：
+
+```bash
+sysctl -w vm.max_map_count=262144
+```
+
+------
+
+##### ❌ 3. UI 没数据
+
+排查顺序：
+
+1. Agent 是否启动成功
+2. OAP 是否收到数据
+3. 是否有接口请求
+
+------
+
+##### ❌ 4. 端口冲突
+
+你之前已经遇到：
+
+```text
+Port 8082 was already in use
+```
+
+👉 SkyWalking 默认：
+
+- 8080（UI）
+- 11800 / 12800（OAP）
+
+确保没冲突
+
+------
+
+#### 六、进阶建议（生产必看）
+
+##### 👉 不要用 --link（已过时）
+
+生产用：
+
+```yaml
+networks:
+  skywalking-net:
+```
+
+------
+
+##### 👉 ES 建议：
+
+- 2G+ 内存
+- 开启持久化 volume
+
+------
+
+##### 👉 OAP 可集群
+
+```bash
+多个 OAP + 注册中心（ZK / K8S）
+```
+
+------
+
+#### 七、一句话总结
+
+👉 **Docker 配置 OAP 本质就是：启动 OAP（11800/12800）+ UI（8080）+ 可选 ES 存储，然后让 Agent 连 11800。**
+
+------
+
+##### 如果你现在卡住了
+
+可以把这些贴出来，我帮你直接定位：
+
+- docker-compose.yml
+- IDEA VM options
+- UI 截图（有没有服务）
+
+我可以帮你一步一步把链路跑通 👍
+
+
+
+
 
 ### **TraceId（链路追踪ID）** 
 

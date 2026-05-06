@@ -872,12 +872,15 @@ top -Hp <pid>                   # 查看 Java 内部线程占用
 #### 二、常用核心参数（必记）
 
 ```bash
--a   # 显示所有连接、监听、套接字
--n   # 纯数字展示，不解析域名/端口名，速度快
--t   # 只看 TCP 协议
--u   # 只看 UDP 协议
--p   # 显示进程PID/程序名（需要root）
--l   # 只看 LISTEN 监听状态
+-a   # 显示所有连接、监听、套接字（通用参数）
+-n   # 纯数字展示，不解析域名/端口名，速度快（通用参数）
+-t   # 只看 TCP 协议 （Linux独有）
+-u   # 只看 UDP 协议 （Linux独有）
+-p   # 显示进程PID/程序名（需要root ， Linux独有）
+-l   # 只看 LISTEN 监听状态 （Linux独有）
+-o ：显示进程 PID（Windows 独有）
+
+grep = Linux 里的「搜索 / 过滤」命令，Windows 里对应的是 findstr
 ```
 
 ✅ 工作万能组合：
@@ -905,7 +908,9 @@ netstat -lntp
 ##### 3. 查看指定端口占用（比如Tomcat 8080）
 
 ```bash
-netstat -ant | grep 8080
+netstat -ant | grep 8080 （linux）
+netatat -ano | findstr 8080 （windows）
+两者功能等价，效果一样
 ```
 
 ##### 4. 统计已建立正常连接数
@@ -919,6 +924,21 @@ netstat -ant | grep ESTABLISHED | wc -l
 ```bash
 netstat -ant | grep CLOSE_WAIT
 ```
+
+##### 6.查看并杀死指定端口的进程
+
+```bash
+netatat -ano | findstr 8080
+TCP    127.0.0.1:8080    0.0.0.0:0    LISTENING    18520
+127.0.0.1:8080：监听地址 + 端口
+LISTENING：正在监听（有服务占用）
+末尾数字 18520 = PID 进程 ID
+
+杀掉占用 8080 端口进程
+taskkill /PID 18520 /F
+```
+
+
 
 ---
 

@@ -6789,3 +6789,103 @@ ArrayList 线程不安全的根本原因：
 #### 最简记忆版（超级好背）
 
 **无锁 → size++ 并发覆盖 → 并发扩容导致越界 → 数据丢失、异常。**
+
+### 杜绝 List 空指针。
+
+---
+
+#### 一、问题根源
+
+```java
+List<String> list = null;
+// 直接遍历 → NPE 空指针异常
+for (String s : list) {
+
+}
+list.stream().forEach(); // 同样 NPE
+```
+
+---
+
+#### 二、方案1：普通 if 判断（最常用、易懂）
+
+```java
+if (list != null && !list.isEmpty()) {
+    // 安全遍历
+    for (String item : list) {
+        
+    }
+}
+```
+
+---
+
+#### 三、方案2：Optional 优雅写法（推荐，高级写法）
+
+##### 1. 遍历
+
+```java
+Optional.ofNullable(list)
+        .orElseGet(List::of) // null 给空集合
+        .forEach(item -> {
+            // 业务逻辑
+        });
+```
+
+##### 2. 流式操作安全处理
+
+```java
+Optional.ofNullable(list)
+        .orElse(List.of())
+        .stream()
+        .filter(Objects::nonNull)
+        .forEach(xxx);
+```
+
+---
+
+#### 四、方案3：工具类（项目通用）
+
+##### Spring / 常用工具
+
+```java
+// org.springframework.util.CollectionUtils
+if (!CollectionUtils.isEmpty(list)) {
+    // 安全操作
+}
+```
+`CollectionUtils.isEmpty()` 底层：
+```java
+public static boolean isEmpty(Collection<?> collection) {
+    return collection == null || collection.isEmpty();
+}
+```
+
+---
+
+#### 五、终极最佳实践（日常开发直接用）
+
+1. **接收参数/查询返回**，先工具类判空
+```java
+if (!CollectionUtils.isEmpty(list)) {
+    // 业务
+}
+```
+
+2. **不想写 if，优雅容错**
+```java
+List<Data> safeList = Optional.ofNullable(list).orElse(Collections.emptyList());
+// 后续随便遍历、stream，不会NPE
+safeList.forEach(xxx);
+```
+
+---
+
+#### 六、面试一句话背诵
+
+> List 集合操作前要防止空指针，
+> 可以使用 **`CollectionUtils.isEmpty()`** 统一判空；
+> 也可以通过 **Optional.ofNullable() 配合空集合兜底**，
+> 把 null 转为空集合再遍历，避免循环和流式操作出现 NPE。
+
+需要我给你整理 **Map、String、对象 全套防NPE 标准写法** 吗？统一一套规范。

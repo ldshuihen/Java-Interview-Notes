@@ -78,7 +78,8 @@ git clone 仓库地址
 - `git diff`：对比差异
 
 ```bash
-# 查看文件状态
+# 查看文件状态，查看工作区 当前状态
+
 git status
 
 # 添加到暂存区
@@ -89,7 +90,7 @@ git add .           # 所有修改
 git commit -m "提交说明"
 
 # 对比差异
-git diff            # 工作区 vs 暂存区
+git diff            # 工作区 vs 暂存区 ，git diff 看完 → 按 q 退出
 git diff --staged   # 暂存区 vs 本地仓库
 ```
 
@@ -1069,6 +1070,83 @@ git commit -m "修改了XX功能"
 git push
 ```
 
+#### 分支名称
+
+- 你本地 Git 老版本默认分支叫：**master**
+- GitHub 现在默认分支叫：**main**
+
+所以本地和远程对不上，推送会失败。我给你**最简单、最安全、一步到位**的解决方法，直接复制命令就能用！
+
+---
+
+##### 一、最推荐方案：把本地分支重命名为 main（推荐）
+
+直接在你的项目里执行：
+
+```bash
+git branch -M main
+```
+
+这条命令会把你当前的 `master` 分支**强制重命名为 main**。
+
+然后再推送：
+```bash
+git push -u origin main
+```
+
+✅ **搞定！以后本地和 GitHub 都是 main，完全统一**
+
+---
+
+##### 二、如果你已经关联了远程仓库
+
+直接执行下面 **2 行** 就能对齐：
+
+```bash
+git branch -M main
+git push -u origin main
+```
+
+---
+
+##### 三、以后新建项目永远默认用 main（一劳永逸）
+
+让你本地 Git 以后初始化默认分支就是 main：
+
+```bash
+git config --global init.defaultBranch main
+```
+
+以后再 `git init` 就是 **main**，不会再出现 master！
+
+---
+
+##### 四、你现在只需要做这 2 步
+
+你当前路径就是项目根目录，直接运行：
+
+1. 重命名本地分支
+```bash
+git branch -M main
+```
+
+2. 推送到 GitHub
+```bash
+git push -u origin main
+```
+
+✅ **完美解决！**
+
+---
+
+##### 总结
+
+- 本地 `master` → 改名为 `main`：`git branch -M main`
+- 推送到 GitHub：`git push -u origin main`
+- 永久默认 main：`git config --global init.defaultBranch main`
+
+需要我帮你把整个提交+推送流程一次性跑完吗？
+
 ---
 
 #### 三、日常开发标准流程（最常用）
@@ -1259,6 +1337,477 @@ git remote -v
 3. 现有项目可随时用 `git remote set-url` 切换
 
 需要我教你**生成 GitHub 令牌（HTTPS 用）** 或者 **一步步带你配置 SSH** 吗？
+
+
+
+### GitHub & Git 版本号（Commit-ID）查看 + 复制 + 回滚 
+
+#### 核心概念
+
+每次 `git commit` 都会生成唯一 **Commit 版本号（SHA-1哈希）**
+- 完整：40 位十六进制字符串
+- 短版本：前 7 位，日常通用
+- `HEAD`：指代**当前最新提交版本**
+
+---
+
+#### 一、本地查看版本号（高频命令）
+
+##### 1. 查看全部历史提交（含完整版本号）
+
+```bash
+git log
+```
+- 按 `q` 退出
+- 第一行 `commit xxxx` 就是版本号
+
+##### 2. 极简一行展示（推荐）
+
+```bash
+git log --oneline
+```
+格式：`短版本号 提交备注`
+
+##### 3. 只查看当前最新版本号
+
+```bash
+# 完整40位
+git rev-parse HEAD
+
+# 短版本号（7位）
+git rev-parse --short HEAD
+```
+
+##### 4. 查看所有分支全部提交
+
+```bash
+git log --oneline --all
+```
+
+---
+
+#### 二、GitHub 网页端查看版本号
+
+1. 打开仓库主页
+2. 点击顶部 **Commits**，展示全部提交记录
+3. 每条记录左侧：**短哈希版本号**
+4. 点击版本号 → 进入提交详情页
+   - 网址末尾 = 完整 40 位版本号
+   - 可一键复制
+
+---
+
+#### 三、版本号复用：3 大核心场景
+
+##### 场景1：复制指定版本号
+
+1. 本地：`git log --oneline` 找到目标版本，复制 7 位短码即可使用
+2. 网页：Commit 列表直接复制哈希值
+
+---
+
+##### 场景2：临时切换到历史版本（只读浏览）
+
+适合：查看旧代码、对比内容，**不修改代码**
+```bash
+# 替换为你的目标版本号
+git checkout 版本号
+```
+此时进入「游离 HEAD 状态」
+切回最新主线：
+```bash
+git checkout main
+```
+
+---
+
+##### 场景3：版本回滚（重点，两种方案）
+
+###### 方案A：软回滚（推荐，保留代码修改）
+
+只撤销提交，**代码文件不变**，可以重新提交
+```bash
+git reset --soft 目标版本号
+```
+
+###### 方案B：硬回滚（危险！丢弃所有修改）
+
+强制还原到指定版本，**后续所有改动全部清空**
+```bash
+git reset --hard 目标版本号
+```
+
+> ⚠️ 硬回滚后，本地丢失的内容无法恢复，谨慎使用
+
+---
+
+###### 场景4：回滚后同步到远程 GitHub
+
+本地回滚完成后，远程还是旧记录，需要强制推送：
+```bash
+git push -f origin main
+```
+> 团队多人协作禁止滥用 `-f`，仅个人仓库使用
+
+---
+
+###### 场景5：撤销某一次提交（保留其他版本）
+
+不删除历史，新增一条「反向提交」修复代码
+```bash
+git revert 版本号
+```
+然后正常推送：
+```bash
+git push
+```
+
+---
+
+#### 四、超精简速查清单
+
+```bash
+# 查看所有提交（简洁）
+git log --oneline
+
+# 查看当前完整版本号
+git rev-parse HEAD
+
+# 查看当前短版本号
+git rev-parse --short HEAD
+
+# 临时切换历史版本
+git checkout 版本号
+
+# 软回滚（保留代码）
+git reset --soft 版本号
+
+# 硬回滚（清空改动）
+git reset --hard 版本号
+
+# 强制覆盖远程仓库
+git push -f
+```
+
+---
+
+#### 五、补充常见问题
+
+1. `git log` 卡住无法输入
+👉 按 `q` 退出查看器
+2. 版本号太长记不住
+👉 统一使用**前7位短版本号**，Git 可自动识别
+3. 误操作硬回滚怎么办
+👉 用 `git reflog` 查看操作记录，找回丢失版本
+
+### Git 回滚
+
+**日常开发 90% 都用这 2 种**（最安全、最标准）
+
+---
+
+#### 一、**最常用、最推荐、最安全 → git revert（首选）**
+
+##### 适用场景
+
+你已经把代码 **push 到 GitHub 了**，想撤销某一次提交，**不破坏历史**。
+
+##### 优点
+
+✅ **安全之王**  
+✅ **不会删除任何历史记录**  
+✅ **团队协作绝对不会出事**  
+✅ GitHub 上能看到你撤销了哪次提交（可追溯）
+
+##### 命令
+
+```bash
+git revert 版本号
+```
+
+然后：
+```bash
+git push
+```
+
+##### 一句话总结
+
+**想撤销某次提交 → 用 git revert**
+
+---
+
+#### 二、**个人项目最常用 → git reset --hard（干净彻底）**
+
+##### 适用场景
+
+**你自己的项目**、还没给别人用，想直接回到过去某版本，**后面的版本全部丢掉**。
+
+##### 优点
+
+✅ 干净  
+✅ 彻底回到过去  
+✅ 适合自己笔记、自己项目
+
+##### 命令
+
+```bash
+git reset --hard 版本号
+```
+
+同步到 GitHub：
+```bash
+git push -f
+```
+
+##### ⚠ 注意
+
+**团队项目千万别用！会删别人代码！**
+
+---
+
+#### 三、你应该用哪个？（直接给结论）
+
+##### 1. 你现在是 **Java 面试笔记**（自己用）
+
+👉 **用 git reset --hard 最方便**
+
+##### 2. 公司/团队开发
+
+👉 **必须用 git revert**
+
+---
+
+#### 四、最精简记忆口诀
+
+```
+自己项目回退版本 → reset --hard
+公司项目撤销提交 → revert
+```
+
+---
+
+#### 五、你现在最常用的回滚命令（直接抄）
+
+##### 回退到某个历史版本（自己项目）
+
+```bash
+git log --oneline        # 查看版本号
+git reset --hard 版本号   # 回退
+git push -f               # 同步到GitHub
+```
+
+##### 撤销某一次提交（公司/安全）
+
+```bash
+git revert 版本号
+git push
+```
+
+---
+
+需要我教你**如何安全回退、不会弄丢笔记**吗？我可以一步步带你操作！
+
+## Gitee
+
+### Gitee使用教程
+
+下面给你一份**从零到能日常使用的 Gitee 完整流程**（含注册→安装Git→配置SSH→建仓库→上传/更新代码→日常协作），直接照着做就能跑通。
+
+---
+
+#### 一、注册 Gitee 账号
+
+1. 打开官网：https://gitee.com
+2. 点击右上角「注册」，填手机号、密码、用户名（英文/数字）
+3. 登录，进入个人主页
+
+---
+
+#### 二、本地安装 Git
+
+- 下载：https://git-scm.com/download/win
+- 安装：一路默认即可（安装后会有 Git Bash）
+
+---
+
+#### 三、配置本地 Git（只做一次）
+
+打开 **Git Bash**：
+```bash
+# 用户名（和Gitee一致即可）
+git config --global user.name "你的Gitee用户名"
+
+# 邮箱（必须是注册Gitee的邮箱）
+git config --global user.email "your_email@xxx.com"
+
+# 查看配置
+git config --global --list
+```
+
+---
+
+#### 四、配置 SSH 免密码（强烈推荐，以后不用输账号密码）
+
+##### 1）生成密钥
+
+```bash
+ssh-keygen -t rsa -b 4096 -C "your_email@xxx.com"
+```
+- 出现路径：直接回车
+- 密码：直接回车（不设密码）
+- 确认：再回车
+
+##### 2）查看并复制公钥
+
+```bash
+cat ~/.ssh/id_rsa.pub
+```
+- 复制全部内容（从 `ssh-rsa` 开头到邮箱结尾）
+
+##### 3）添加到 Gitee
+
+1. 网页右上角头像 → **设置**
+2. 左侧 **SSH公钥** → 粘贴 → 标题随便写（如“PC”）→ 确定
+
+##### 4）测试是否成功
+
+```bash
+ssh -T git@gitee.com
+```
+看到 `Hi xxx! You've successfully authenticated...` 就成功了
+
+---
+
+#### 五、在 Gitee 创建远程仓库
+
+1. 右上角 **+** → **新建仓库**
+
+2. 填写：
+   - 仓库名称：英文/数字（如 `Java-Interview-Notes`）
+   - 介绍：随便写
+   - 可见性：**公开**（免费）或私有
+   - ❌ **不要勾选“初始化仓库（README）”**（本地已有代码会冲突）
+3. 点击 **创建**
+
+---
+
+#### 六、把本地代码上传到 Gitee（第一次）
+
+假设你的代码在 `E:/Desktop/JAVA面试/`
+
+##### 1）进入项目目录
+
+```bash
+cd /e/Desktop/JAVA面试/JAVA-Interview-Self
+```
+
+##### 2）初始化本地仓库（如果还不是 Git 项目）
+
+```bash
+git init
+```
+
+##### 3）关联远程仓库（复制你Gitee仓库的SSH地址）
+
+```bash
+git remote add origin git@gitee.com:你的用户名/仓库名.git
+
+# 查看是否关联成功
+git remote -v
+```
+
+##### 4）添加、提交、推送
+
+```bash
+# 添加所有文件
+git add .
+
+# 提交
+git commit -m "第一次上传：Java面试笔记"
+
+# 推送到main分支（-u 绑定，以后直接git push）
+git push -u origin main
+```
+
+---
+
+#### 七、日常使用流程（以后每天都这么干）
+
+##### 1）修改代码后
+
+```bash
+# 查看改了哪些
+git status
+git diff   # 按q退出
+```
+
+##### 2）提交到本地
+
+```bash
+git add .
+git commit -m "更新：新增并发八股笔记"
+```
+
+##### 3）推送到 Gitee
+
+```bash
+git push
+```
+
+##### 4）如果多人协作，先拉最新代码
+
+```bash
+git pull origin main
+```
+有冲突就手动改文件，然后：
+```bash
+git add .
+git commit -m "解决冲突"
+git push
+```
+
+---
+
+#### 八、常用命令速查（直接复制用）
+
+```bash
+# 状态
+git status
+git diff
+
+# 提交
+git add .
+git commit -m "备注"
+
+# 推送/拉取
+git push
+git pull
+
+# 查看日志
+git log
+
+# 撤销工作区修改（没add前）
+git checkout -- 文件名
+
+# 撤销暂存区（add后，没commit）
+git reset HEAD 文件名
+```
+
+---
+
+#### 九、和 GitHub 的区别（简单说）
+
+- **GitHub**：国外，访问慢，公开免费
+- **Gitee（码云）**：国内，速度快，中文界面，私有仓库免费（有容量限制）
+- 操作命令完全一样，只是远程地址不同
+
+---
+
+如果你愿意，我可以直接帮你：
+- 生成一份 **可直接复制的命令清单**（按你的用户名/仓库名写好）
+- 或给你做一张 **Gitee 日常操作流程图**
+
+你要哪种？
 
 ## Git 分支管理
 
