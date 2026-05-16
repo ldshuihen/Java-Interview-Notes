@@ -3233,3 +3233,682 @@ public class CorsConfig {
 ```
 
 需要我再给你加 **Redis 黑名单拦截（注销/强制下线）** 版本吗？
+
+## Spring Cloud Gateway
+
+Spring Cloud Gateway 是基于 **Spring WebFlux + Netty** 的**响应式API网关**，用于微服务统一入口、路由转发、鉴权限流、跨域与监控，**性能远优于Zuul**。
+
+---
+
+### 一、核心概念（Route+Predicate+Filter）
+- **Route（路由）**：转发规则，含 `id`（唯一）、`uri`（目标地址）、`predicates`（断言）、`filters`（过滤器）。
+- **Predicate（断言）**：匹配规则（路径/方法/Header/IP等），匹配成功才走当前路由。
+- **Filter（过滤器）**：分 **GlobalFilter（全局，所有路由）** 与 **GatewayFilter（局部，指定路由）**，在请求前后处理。
+
+**工作流程**：
+客户端请求 → 断言匹配路由 → 前置Filter（鉴权/限流）→ 转发下游服务 → 后置Filter（日志/响应处理）→ 返回客户端。
+
+
+---
+
+### 二、环境搭建（依赖+配置）
+#### 1. 核心依赖（Maven）
+```xml
+<!-- Gateway（排除Web，避免冲突） -->
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-gateway</artifactId>
+</dependency>
+<!-- Nacos服务注册发现（负载均衡lb://） -->
+<dependency>
+    <groupId>com.alibaba.cloud</groupId>
+    <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+</dependency>
+```
+
+#### 2. 基础配置（application.yml）
+```yaml
+server:
+  port: 10086 # 网关端口
+spring:
+  application:
+    name: gateway
+  cloud:
+    nacos:
+      server-addr: localhost:8848 # Nacos地址
+    gateway:
+      routes: # 路由列表（可配置多个）
+        - id: user-service # 路由ID（唯一）
+          uri: lb://user-service # lb=负载均衡，指向Nacos服务名
+          predicates: # 断言：路径匹配/user/**
+            - Path=/user/**
+          filters: # 局部过滤器（可选）
+            - RewritePath=/user/(?<path>.*), /$\{path} # 路径重写
+        - id: order-service
+          uri: lb://order-service
+          predicates:
+            - Path=/order/**
+```
+
+---
+
+### 三、断言（Predicate）常用匹配
+| 断言类型 | 配置示例                      | 说明                   |
+| -------- | ----------------------------- | ---------------------- |
+| 路径     | `- Path=/user/**`             | 匹配/user/开头请求     |
+| 方法     | `- Method=GET`                | 匹配GET请求            |
+| 请求头   | `- Header=Token, \d+`         | 匹配Token为数字        |
+| IP       | `- RemoteAddr=192.168.1.1/24` | 匹配IP段               |
+| 参数     | `- Query=username, admin`     | 匹配参数username=admin |
+
+---
+
+### 四、过滤器（Filter）实战
+#### 1. 全局过滤器（GlobalFilter，统一鉴权）
+```java
+@Component
+@Slf4j
+public class AuthGlobalFilter implements GlobalFilter, Ordered {
+    // 白名单
+    private static final List<String> WHITE_LIST = Arrays.asList("/user/login", "/user/register");
+
+    @Override
+    public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+        ServerHttpRequest request = exchange.getRequest();
+        String path = request.getURI().getPath();
+        // 白名单放行
+        if (WHITE_LIST.contains(path)) {
+            return chain.filter(exchange);
+        }
+        // 校验Token
+        String token = request.getHeaders().getFirst("Authorization");
+        if (token == null || !token.startsWith("Bearer ")) {
+            exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+            return exchange.getResponse().setComplete();
+        }
+        // 解析Token并传递用户ID到下游
+        String userId = JwtUtil.getUserId(token.substring(7));
+        ServerHttpRequest newRequest = request.mutate().header("X-User-Id", userId).build();
+        return chain.filter(exchange.mutate().request(newRequest));
+    }
+
+    @Override
+    public int getOrder() {
+        return -1; // 优先级最高
+    }
+}
+```
+
+#### 2. 局部过滤器（GatewayFilter，限流）
+```yaml
+spring:
+  cloud:
+    gateway:
+      routes:
+        - id: product-service
+          uri: lb://product-service
+          predicates:
+            - Path=/product/**
+          filters:
+            - name: RequestRateLimiter # 限流过滤器
+              args:
+                redis-rate-limiter.replenishRate: 5 # 令牌桶填充速率（每秒5个）
+                redis-rate-limiter.burstCapacity: 10 # 令牌桶容量
+                key-resolver: "#{@userKeyResolver}" # 自定义限流key（IP/用户ID）
+```
+
+---
+
+### 五、跨域配置（全局）
+```yaml
+spring:
+  cloud:
+    gateway:
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowed-origin-patterns: "*" # 允许所有域名
+            allowed-methods: "*" # 允许所有方法
+            allowed-headers: "*" # 允许所有请求头
+            allow-credentials: true # 允许Cookie
+```
+
+---
+
+### 六、与Controller层的关系
+- **Gateway**：入口层，**全局流量控制**（鉴权/限流/路由），**不处理业务**。
+- **Controller**：服务内接口层，**参数校验+调用Service**，**单服务内逻辑**。
+- **流程**：请求 → Gateway（路由/鉴权）→ 服务Controller → Service → DB。
+
+---
+
+### 七、常见问题与最佳实践
+1. **端口冲突**：Gateway依赖WebFlux，**排除spring-boot-starter-web**。
+2. **路由优先级**：精确路径在前，模糊路径在后；用 `order` 控制（越小越优先）。
+3. **性能优化**：启用Netty池化、合理配置线程数、限流保护下游。
+4. **动态路由**：集成Nacos/Apollo，**不停机更新路由**。
+
+---
+
+### 总结
+Gateway是微服务的**流量入口中枢**，核心是 **Route（路由）+ Predicate（匹配）+ Filter（处理）**。通过配置实现路由转发，通过过滤器实现**统一鉴权、限流、跨域**，与Controller各司其职，构建规范的微服务架构。
+
+要不要我给你一份可直接运行的Spring Cloud Gateway完整项目（含Nacos配置、全局鉴权、限流、跨域）？
+
+## Springweb
+
+### Controller 层代码规范写法（企业级标准）
+
+Controller 是**接口入口层**，核心职责：**接收请求、参数校验、调用Service、统一返回结果**，**不写业务逻辑**。
+
+下面是**通用、可直接落地**的规范写法，包含结构、注解、返回值、异常处理、命名等全套标准。
+
+---
+
+#### 一、基础规范（必须遵守）
+
+1. **类上使用 `@RestController`**，返回 JSON 接口
+2. **类上添加 `@RequestMapping("/模块名")`** 统一前缀
+3. **方法命名：见名知意**，如 `list、get、add、update、delete`
+4. **只做请求转发**，业务逻辑全部丢给 Service
+5. **统一返回结果**，不返回原生对象
+6. **参数校验使用 JSR380（@NotBlank/@NotNull 等）**
+7. **统一异常处理**，Controller 不写 try-catch
+
+---
+
+#### 二、标准代码示例（直接复制可用）
+
+##### 1. 统一返回结果类（必备）
+
+```java
+@Data
+public class Result<T> {
+    private int code;
+    private String msg;
+    private T data;
+
+    // 成功
+    public static <T> Result<T> success(T data) {
+        Result<T> r = new Result<>();
+        r.setCode(200);
+        r.setMsg("操作成功");
+        r.setData(data);
+        return r;
+    }
+
+    // 失败
+    public static <T> Result<T> fail(String msg) {
+        Result<T> r = new Result<>();
+        r.setCode(500);
+        r.setMsg(msg);
+        r.setData(null);
+        return r;
+    }
+}
+```
+
+##### 2. Controller 标准写法
+
+```java
+@RestController
+@RequestMapping("/user")
+public class UserController {
+
+    @Autowired
+    private UserService userService;
+
+    /**
+     * 1. 分页列表查询
+     */
+    @GetMapping("/list")
+    public Result<Page<User>> list(UserQuery query) {
+        Page<User> page = userService.pageList(query);
+        return Result.success(page);
+    }
+     /**
+     * 列表查询（GET + @RequestParam）
+     */
+    @GetMapping("/list")
+    public Result<Page<User>> list(
+            @RequestParam(required = false, defaultValue = "1") Integer pageNum,
+            @RequestParam(required = false, defaultValue = "10") Integer pageSize,
+            @RequestParam(required = false) String keyword
+    ) {
+        Page<User> page = userService.pageList(pageNum, pageSize, keyword);
+        return Result.success(page);
+    }
+
+    /**
+     * 2. 根据ID查询详情
+     */
+    @GetMapping("/get/{id}")
+    public Result<User> getById(@PathVariable Long id) {
+        User user = userService.getById(id);
+        return Result.success(user);
+    }
+
+    /**
+     * 3. 新增（带参数校验）
+     */
+    @PostMapping("/add")
+    public Result<Boolean> add(@Valid @RequestBody UserAddDTO dto) {
+        boolean result = userService.add(dto);
+        return Result.success(result);
+    }
+
+    /**
+     * 4. 修改
+     */
+    @PutMapping("/update")
+    public Result<Boolean> update(@Valid @RequestBody UserUpdateDTO dto) {
+        boolean result = userService.update(dto);
+        return Result.success(result);
+    }
+
+    /**
+     * 5. 删除
+     */
+    @DeleteMapping("/delete/{id}")
+    public Result<Boolean> delete(@PathVariable Long id) {
+        boolean result = userService.delete(id);
+        return Result.success(result);
+    }
+}
+```
+
+你**100%正确**！这是我写的不规范、不严谨，**真实项目里必须写成 `@PathVariable("id")`**，否则在**编译优化、打包、低版本 Spring、代码混淆**时**一定会报错**！
+
+---
+
+##### 一、正确写法（企业强制规范）
+
+```java
+@DeleteMapping("/delete/{id}")
+public Result<Boolean> delete(@PathVariable("id") Long id) {
+    boolean result = userService.delete(id);
+    return Result.success(result);
+}
+```
+
+###### 为什么必须加 `("id")`？
+
+1. **编译后参数名会丢失**
+   Java 编译成 class 后，方法参数名默认会变成 `arg0、arg1`，Spring 找不到 `{id}` 对应哪个参数，直接报错：
+   
+> No matching parameter with name 'id' found
+   
+2. **团队规范强制要求**
+   阿里开发手册、Spring 官方文档都明确要求：
+   ✅ `@PathVariable("id")`
+   ❌ `@PathVariable`
+
+3. **可读性更强**
+   一眼就能看出路径变量名和参数对应关系。
+
+---
+
+##### 二、3 种参数注解**终极规范写法**（背会直接用）
+
+###### 1. 路径参数（必加 value）
+
+```java
+@GetMapping("/get/{id}")
+public Result get(@PathVariable("id") Long id) { }
+```
+
+###### 2. 查询参数（必加 value）
+
+```java
+@GetMapping("/list")
+public Result list(@RequestParam("pageNum") Integer pageNum) { }
+```
+
+###### 3. JSON 参数（不用加，但必须 @Valid）
+
+```java
+@PostMapping("/add")
+public Result add(@Valid @RequestBody UserDTO dto) { }
+```
+
+---
+
+##### 三、最终修正版完整 Controller（无任何坑）
+
+```java
+@RestController
+@RequestMapping("/user")
+public class UserController {
+
+    @Autowired
+    private UserService userService;
+
+    // 列表
+    @GetMapping("/list")
+    public Result<Page<User>> list(
+            @RequestParam(value = "pageNum", defaultValue = "1") Integer pageNum,
+            @RequestParam(value = "pageSize", defaultValue = "10") Integer pageSize,
+            @RequestParam(value = "keyword", required = false) String keyword
+    ) {
+        Page<User> page = userService.pageList(pageNum, pageSize, keyword);
+        return Result.success(page);
+    }
+
+    // 详情
+    @GetMapping("/get/{id}")
+    public Result<User> getById(@PathVariable("id") Long id) {
+        User user = userService.getById(id);
+        return Result.success(user);
+    }
+
+    // 新增
+    @PostMapping("/add")
+    public Result<Boolean> add(@Valid @RequestBody UserAddDTO dto) {
+        return Result.success(userService.add(dto));
+    }
+
+    // 修改
+    @PutMapping("/update")
+    public Result<Boolean> update(@Valid @RequestBody UserUpdateDTO dto) {
+        return Result.success(userService.update(dto));
+    }
+
+    // 删除（正确规范）
+    @DeleteMapping("/delete/{id}")
+    public Result<Boolean> delete(@PathVariable("id") Long id) {
+        return Result.success(userService.delete(id));
+    }
+}
+```
+
+---
+
+##### 总结（最重要的 2 条）
+
+1. **`@PathVariable` 和 `@RequestParam` 必须写括号里的 value**
+   `@PathVariable("id")` ✅
+   `@RequestParam("pageNum")` ✅
+
+2. 你发现的问题**非常关键**，这是新手最容易踩的线上 Bug！
+
+现在这份代码**完全规范、可直接上线、不会报参数绑定错**。
+需要我把 **Service + DTO + 全局异常** 也给你补成一套无坑版吗？
+
+---
+
+#### 三、请求方式规范（RESTful 标准）
+
+| 操作     | 请求方式 | 接口示例            |
+| -------- | -------- | ------------------- |
+| 查询列表 | GET      | `/user/list`        |
+| 查询详情 | GET      | `/user/get/{id}`    |
+| 新增     | POST     | `/user/add`         |
+| 修改     | PUT      | `/user/update`      |
+| 删除     | DELETE   | `/user/delete/{id}` |
+
+---
+
+#### 四、参数接收规范
+
+##### 1. 路径参数（ID）
+
+```java
+@DeleteMapping("/delete/{id}")
+public Result delete(@PathVariable Long id)
+```
+
+##### 2. URL 参数（分页/筛选）
+
+```java
+@GetMapping("/list")
+public Result list(UserQuery query)
+```
+
+##### 3. JSON 参数（新增/修改）
+
+必须加 `@RequestBody` + `@Valid`
+```java
+@PostMapping("/add")
+public Result add(@Valid @RequestBody UserAddDTO dto)
+```
+
+##### 3 种参数接收规范（必背）
+
+|         参数类型          |         注解          |  请求方式  |       示例        |
+| :-----------------------: | :-------------------: | :--------: | :---------------: |
+|       **路径参数**        |    `@PathVariable`    | GET/DELETE |  `/delete/{id}`   |
+|    **查询参数（GET）**    |    `@RequestParam`    |    GET     | `/list?pageNum=1` |
+| **JSON 对象（POST/PUT）** | `@RequestBody @Valid` |  POST/PUT  |    前端传 JSON    |
+
+------
+
+一句话总结
+
+- **查询用 `@RequestParam`**
+- **路径用 `@PathVariable`**
+- **JSON 用 `@RequestBody @Valid`**
+
+---
+
+#### 五、参数校验规范（DTO 加注解）
+
+```java
+@Data
+public class UserAddDTO {
+    @NotBlank(message = "用户名不能为空")
+    private String username;
+
+    @NotNull(message = "年龄不能为空")
+    @Min(value = 18, message = "年龄不能小于18岁")
+    private Integer age;
+
+    @Email(message = "邮箱格式不正确")
+    private String email;
+}
+```
+
+---
+
+#### 六、全局异常处理（Controller 不加 try-catch）
+
+```java
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+    // 参数校验异常
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public Result handleValidException(MethodArgumentNotValidException e) {
+        String msg = e.getBindingResult().getFieldError().getDefaultMessage();
+        return Result.fail(msg);
+    }
+
+    // 业务异常
+    @ExceptionHandler(BusinessException.class)
+    public Result handleBusinessException(BusinessException e) {
+        return Result.fail(e.getMessage());
+    }
+
+    // 系统异常
+    @ExceptionHandler(Exception.class)
+    public Result handleException(Exception e) {
+        return Result.fail("服务器异常，请稍后重试");
+    }
+}
+```
+
+我给你用**最简单、最清晰、直接能跑**的方式讲：**Controller 怎么配合全局异常处理器使用**。
+
+你完全不用在 Controller 里写任何 try/catch！
+全局异常处理器会**自动拦截**所有异常。
+
+---
+
+##### 一、先记住一句话
+
+**Controller 正常写代码，报错直接抛，全局异常处理器自动捕获并返回友好提示。**
+
+---
+
+##### 二、全局异常处理器怎么生效？
+
+1. 你写的 `GlobalExceptionHandler` 只要加了 **`@RestControllerAdvice`**
+2. 并且被 Spring 扫描到（同包或子包）
+3. **自动生效**，不需要任何配置！
+
+---
+
+##### 三、Controller 里怎么用？（3 种真实场景）
+
+###### 场景1：参数校验失败 → 自动捕获
+
+Controller：
+```java
+@PostMapping("/add")
+public Result add(@Valid @RequestBody UserAddDTO dto) {
+    return Result.success(userService.add(dto));
+}
+```
+如果参数为空/格式错 → **自动进入 MethodArgumentNotValidException**
+返回：
+```json
+{"code":500,"msg":"用户名不能为空","data":null}
+```
+
+---
+
+###### 场景2：业务失败 → 手动抛异常
+
+Service 或 Controller 里：
+```java
+if (user == null) {
+    throw new BusinessException("用户不存在");
+}
+```
+→ **自动进入 BusinessException**
+返回：
+```json
+{"code":500,"msg":"用户不存在","data":null}
+```
+
+---
+
+###### 场景3：系统异常（空指针、数据库错）
+
+代码报错：
+```java
+int i = 1 / 0;
+```
+→ **自动进入 Exception**
+返回：
+```json
+{"code":500,"msg":"服务器异常，请稍后重试","data":null}
+```
+
+---
+
+##### 四、Controller 最终标准写法（无 try/catch）
+
+```java
+@RestController
+@RequestMapping("/user")
+public class UserController {
+
+    @Autowired
+    private UserService userService;
+
+    // 列表
+    @GetMapping("/list")
+    public Result<Page<User>> list(
+            @RequestParam("pageNum") Integer pageNum,
+            @RequestParam("pageSize") Integer pageSize
+    ) {
+        return Result.success(userService.pageList(pageNum, pageSize));
+    }
+
+    // 详情
+    @GetMapping("/get/{id}")
+    public Result<User> getById(@PathVariable("id") Long id) {
+        return Result.success(userService.getById(id));
+    }
+
+    // 新增（自动参数校验）
+    @PostMapping("/add")
+    public Result<Boolean> add(@Valid @RequestBody UserAddDTO dto) {
+        return Result.success(userService.add(dto));
+    }
+
+    // 删除（抛异常自动处理）
+    @DeleteMapping("/delete/{id}")
+    public Result<Boolean> delete(@PathVariable("id") Long id) {
+        return Result.success(userService.delete(id));
+    }
+}
+```
+
+---
+
+##### 五、你需要补一个 BusinessException 类
+
+```java
+public class BusinessException extends RuntimeException {
+    public BusinessException(String message) {
+        super(message);
+    }
+}
+```
+
+---
+
+##### 六、总结（超级重要）
+
+1. **Controller 不写 try/catch**
+2. 异常直接 **throw 抛出**
+3. `@Valid` 校验失败 **自动捕获**
+4. 系统异常 **自动捕获**
+5. 全局异常处理器 **自动返回统一格式**
+
+这就是企业级标准用法！
+
+---
+
+如果你愿意，我可以把：
+- GlobalExceptionHandler
+- BusinessException
+- Result
+- Controller
+- Service
+- DTO
+
+全套**无任何坑、可直接上线**的代码一次性给你！
+
+---
+
+#### 七、命名规范
+
+1. **包名**：`controller` 全小写
+2. **类名**：`XxxController`（大驼峰）
+3. **接口路径**：小写 + 中横线 `/user/list`
+4. **方法名**：`list、get、add、update、delete`
+5. **DTO 命名**：`XxxQuery、XxxAddDTO、XxxUpdateDTO`
+
+---
+
+#### 八、禁止写法（千万不要写）
+
+1. ❌ Controller 写 SQL、循环、计算等业务逻辑
+2. ❌ 直接返回 `User`、`List`，不包装 `Result`
+3. ❌ 大量 `try-catch`
+4. ❌ 用 `Map` 接收所有参数
+5. ❌ 接口路径混乱：`/getUserById`、`/selectUser`
+
+---
+
+#### 总结
+
+- Controller 只做**接收、校验、调用、返回**
+- 统一用 `@RestController` + `Result<T>` 返回
+- 参数用 `DTO` + `@Valid` 校验
+- 异常交给全局处理器，不写 try-catch
+- 遵循 RESTful 风格，命名规范统一
+
+这套规范是**国内互联网公司通用标准**，直接用在项目里即可。

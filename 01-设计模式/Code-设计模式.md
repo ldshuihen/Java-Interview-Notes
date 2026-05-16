@@ -262,3 +262,84 @@ User user = new User.Builder("张三", 20) // new 出来的是 Builder 实例
 1. `.builder()` 是**静态方法**（带括号是关键特征），调用后返回 Builder 实例；
 2. `.builder()` 之后的 `.name()`/`.age()`/`.build()` 是 Builder 实例的**成员方法**，而非属性；
 3. Java 中“属性”无括号（如 `obj.field`），“方法”必须带括号（如 `obj.method()`），这是区分两者的核心标志。
+
+### 单例模式
+
+#### 饿汉式
+
+```java
+public class HungrySingleton(){
+    // 1.私有静态常量实例，类加载时直接初始化实例
+    private static final HungrySingleton INSTANCE = new HungrySingleton();
+    
+   	// 2.私有构造方法，防止反射new破坏
+    private HungrySingleton(){
+        // 防止反射被破坏
+        if(INSTANCE!=NULL){
+            throw new RuntimeException("禁止反射创建实例单例");
+        }
+    }
+    // 3.公共静态方法，提供全局访问点
+    public static HungrySingleton getInstance(){
+        return INSTANCE;
+    }
+    
+    
+    
+}
+```
+
+
+
+#### 懒汉式
+
+```java
+public class LazySingletonDCL(){
+    // 1.私有静态常量实例，懒加载
+    private static volatile LazySingletonDCL INSTANCE;
+    
+   	// 2.私有构造方法，防止反射new破坏
+    private LazySingletonDCL(){
+        // 防止反射被破坏
+        if(INSTANCE!=NULL){
+            throw new RuntimeException("禁止反射创建实例单例");
+        }
+    }
+    // 3.公共静态方法，提供全局访问点,DCL, 第一次调用时创建实例，在 Spring 中统一使用 null（小写）。
+    public static HungrySingletonDCL getInstance(){
+        if(INSTANCE==null){
+            synchronized(HungrySingletonDCL.class){
+                if(INTANCE===null){
+                    INSTANCE = new LazzySingletonDCL();
+                }
+            }
+        }
+        return INSTANCE;
+       
+    }
+    
+    
+    
+}
+```
+
+
+
+#### 静态内部类
+
+
+
+#### 枚举单例
+
+
+
+### 观察者模式
+
+### 策略模式
+
+### 门面模式
+
+### 适配器模式
+
+
+

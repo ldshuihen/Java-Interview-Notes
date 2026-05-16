@@ -1,5 +1,852 @@
 # Docker
 
+## Dockerfile
+
+### Dockerfile
+
+Dockerfile 是构建 Docker 镜像的**文本蓝图**，由一组按顺序执行的指令组成，每条指令生成一个镜像层，最终打包为可分发的镜像。下面从**基础概念、核心指令、构建流程、多阶段构建、最佳实践、完整示例**六个维度详细介绍。
+
+---
+
+#### 一、基础概念
+
+##### 1. 什么是 Dockerfile？
+
+- 纯文本文件，命名为 `Dockerfile`（首字母大写）。
+- 包含一系列指令，自动化构建镜像，确保环境一致性。
+- 核心价值：**自动化、可重复、可版本化、透明化**。
+
+##### 2. 基本语法规则
+
+- 指令**大写**（约定俗成，区分参数），参数小写。
+- 从上到下顺序执行，**每条指令生成一个镜像层**。
+- `#` 开头为注释，不影响构建。
+- 必须以 `FROM` 开头（解析器指令、`ARG` 除外）。
+- 支持**行续符 `\`**，跨行写指令。
+
+##### 3. 构建上下文（Build Context）
+
+- `docker build` 命令执行目录下的所有文件，是镜像构建的“资源池”。
+- `.dockerignore` 排除无关文件（如 `.git`、`node_modules`、日志），减小构建体积、加速构建。
+
+---
+
+#### 二、核心指令详解（按常用顺序）
+
+##### 1. `FROM`：指定基础镜像（必选）
+
+- **作用**：定义新镜像的基础，所有镜像都基于此构建。
+- **语法**：
+  ```dockerfile
+  FROM <image>[:<tag>] [AS <name>]
+  ```
+- **示例**：
+  ```dockerfile
+  FROM ubuntu:22.04
+  FROM node:18-alpine AS builder  # 多阶段构建，命名阶段
+  ```
+- **最佳实践**：使用**官方轻量镜像**（如 `alpine`），固定 `tag`（避免 `latest` 不确定性）。
+
+##### 2. `ARG`：构建时参数
+
+- **作用**：定义构建过程中的变量，仅构建时有效，容器运行时不可见。
+- **语法**：
+  ```dockerfile
+  ARG <name>[=<default>]
+  ```
+- **示例**：
+  ```dockerfile
+  ARG VERSION=1.0
+  FROM ubuntu:${VERSION}
+  ```
+- **传参**：`docker build --build-arg VERSION=2.0 -t my-img .`
+
+##### 3. `LABEL`：镜像元数据
+
+- **作用**：添加镜像描述信息（作者、版本、描述），替代旧指令 `MAINTAINER`。
+- **语法**：
+  ```dockerfile
+  LABEL <key>=<value> <key>=<value> ...
+  ```
+- **示例**：
+  ```dockerfile
+  LABEL maintainer="user@example.com"
+  LABEL version="1.0" description="My Docker Image"
+  ```
+
+##### 4. `ENV`：环境变量
+
+- **作用**：设置容器运行时的环境变量，构建和运行时均有效。
+- **语法**：
+  ```dockerfile
+  ENV <key>=<value>
+  ENV <key1>=<value1> <key2>=<value2>
+  ```
+- **示例**：
+  ```dockerfile
+  ENV PATH=/app/bin:$PATH
+  ENV NODE_ENV=production
+  ```
+
+##### 5. `WORKDIR`：工作目录
+
+- **作用**：指定后续 `RUN`、`CMD`、`ENTRYPOINT`、`COPY`、`ADD` 的默认工作目录。
+- **语法**：
+  ```dockerfile
+  WORKDIR /path/to/dir
+  ```
+- **示例**：
+  ```dockerfile
+  WORKDIR /app
+  RUN pwd  # 输出 /app
+  ```
+- **最佳实践**：用**绝对路径**，避免多次 `RUN cd`，直接用 `WORKDIR` 替代。
+
+##### 6. `COPY`：复制文件（推荐）
+
+- **作用**：从**构建上下文**复制文件/目录到镜像内。
+- **语法**：
+  ```dockerfile
+  COPY <src> <dest>
+  COPY ["<src>", "<dest>"]  # 路径含空格时用
+  ```
+- **示例**：
+  ```dockerfile
+  COPY . /app
+  COPY target/app.jar /app/
+  ```
+- **特点**：仅本地文件、不解压、不支持 URL、**可缓存、安全**。
+
+##### 7. `ADD`：增强复制（慎用）
+
+- **作用**：类似 `COPY`，额外支持：
+  - 自动解压本地 `tar.gz` 到目标目录。
+  - 从 URL 下载文件到镜像。
+- **语法**：同 `COPY`。
+- **示例**：
+  ```dockerfile
+  ADD https://example.com/file.tar.gz /tmp/
+  ADD app.tar.gz /app/
+  ```
+- **最佳实践**：优先用 `COPY`；仅需解压或下载时用 `ADD`。
+
+##### 8. `RUN`：构建时执行命令
+
+- **作用**：在构建镜像时执行命令（如安装软件、编译代码），**生成新镜像层**。
+- **语法**：
+  - Shell 格式（默认 `/bin/sh -c`）：
+    ```dockerfile
+    RUN <command>
+    ```
+  - Exec 格式（推荐，避免 shell 问题）：
+    ```dockerfile
+    RUN ["executable", "param1", "param2"]
+    ```
+- **示例**：
+  ```dockerfile
+  RUN apt update && apt install -y nginx
+  RUN ["apt", "install", "-y", "curl"]
+  ```
+- **最佳实践**：
+  - **合并多个 `RUN`**，减少镜像层数（如 `RUN apt update && apt install -y nginx curl`）。
+  - 清理缓存（如 `apt clean`），减小镜像体积。
+
+##### 9. `EXPOSE`：声明端口
+
+- **作用**：声明容器运行时监听的端口，**仅文档说明，不自动开放端口**。
+- **语法**：
+  ```dockerfile
+  EXPOSE <port> [<port>/<protocol>]
+  ```
+- **示例**：
+  ```dockerfile
+  EXPOSE 80
+  EXPOSE 443/tcp
+  ```
+- **开放端口**：运行时用 `-p` 映射端口：`docker run -p 8080:80 my-img`。
+
+##### 10. `VOLUME`：数据卷
+
+- **作用**：创建匿名卷，挂载到容器指定目录，**持久化数据、共享数据**。
+- **语法**：
+  ```dockerfile
+  VOLUME ["/path/to/dir"]
+  ```
+- **示例**：
+  ```dockerfile
+  VOLUME /data
+  ```
+- **注意**：运行时可挂载命名卷或宿主机目录：`docker run -v my-volume:/data my-img`。
+
+##### 11. `USER`：运行用户
+
+- **作用**：指定容器运行时的用户（默认 `root`），**提升安全性**。
+- **语法**：
+  ```dockerfile
+  USER <user>[:<group>]
+  ```
+- **示例**：
+  ```dockerfile
+  USER appuser
+  ```
+- **最佳实践**：避免用 `root` 运行容器，创建普通用户并授权。
+
+##### 12. `CMD`：容器启动命令
+
+- **作用**：定义容器启动后默认执行的命令，**运行时可被覆盖**。
+- **语法**：
+  - Shell 格式：
+    ```dockerfile
+    CMD <command>
+    ```
+  - Exec 格式（推荐）：
+    ```dockerfile
+    CMD ["executable", "param1", "param2"]
+    ```
+- **示例**：
+  ```dockerfile
+  CMD ["java", "-jar", "app.jar"]
+  CMD echo "Container started"
+  ```
+- **注意**：一个 Dockerfile 仅**最后一个 `CMD` 生效**。
+- **覆盖**：`docker run my-img java -jar custom.jar`。
+
+##### 13. `ENTRYPOINT`：入口点（不可覆盖）
+
+- **作用**：与 `CMD` 类似，但**运行时不可被覆盖**，`CMD` 可作为其参数。
+- **语法**：同 `CMD`。
+- **示例**：
+  ```dockerfile
+  ENTRYPOINT ["java", "-jar"]
+  CMD ["app.jar"]
+  ```
+- **运行**：`docker run my-img custom.jar` → 执行 `java -jar custom.jar`。
+
+##### 14. `HEALTHCHECK`：健康检查
+
+- **作用**：定义容器健康状态检查命令，Docker 定期执行，判断容器是否正常运行。
+- **语法**：
+  ```dockerfile
+  HEALTHCHECK [OPTIONS] CMD <command>
+  ```
+  - 选项：`--interval`（检查间隔，默认 30s）、`--timeout`（超时，默认 30s）、`--retries`（重试次数，默认 3）。
+- **示例**：
+  ```dockerfile
+  HEALTHCHECK --interval=5s --timeout=3s CMD curl -f http://localhost/ || exit 1
+  ```
+
+##### 15. `ONBUILD`：延迟执行指令
+
+- **作用**：当该镜像作为**基础镜像**被其他 Dockerfile 构建时，触发执行 `ONBUILD` 定义的指令。
+- **语法**：
+  ```dockerfile
+  ONBUILD <instruction>
+  ```
+- **示例**：
+  ```dockerfile
+  ONBUILD COPY . /app
+  ONBUILD RUN npm install
+  ```
+
+---
+
+#### 三、镜像构建流程
+
+1. 编写 `Dockerfile` 和 `.dockerignore`。
+2. 执行构建命令：
+   ```bash
+   docker build -t my-image:1.0 .
+   ```
+   - `-t`：指定镜像标签（名称:版本）。
+   - `.`：构建上下文为当前目录。
+3. Docker 按顺序执行指令，每条指令生成一个镜像层，最终合并为新镜像。
+4. 查看镜像：`docker images`。
+5. 运行容器：`docker run -d -p 8080:80 my-image:1.0`。
+
+---
+
+#### 四、多阶段构建（Multi-stage Builds）
+
+##### 1. 作用
+
+- **减小最终镜像体积**：将构建过程（编译、依赖安装）与运行环境分离，最终镜像仅保留运行时必需文件。
+- **提高构建效率**：并行执行构建阶段。
+
+##### 2. 语法
+
+- 用 `AS <name>` 命名构建阶段，后续阶段可复制前一阶段文件。
+
+##### 3. 示例（Node.js 应用）
+
+```dockerfile
+# 构建阶段：编译代码、安装依赖
+FROM node:18-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+RUN npm run build
+
+# 运行阶段：仅保留运行时必需文件
+FROM node:18-alpine
+WORKDIR /app
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/package*.json ./
+RUN npm install --production
+EXPOSE 3000
+CMD ["node", "dist/index.js"]
+```
+
+---
+
+#### 五、最佳实践
+
+1. **最小化基础镜像**：优先用 `alpine`、`slim` 等轻量镜像，减小体积、提升安全性。
+2. **合并 `RUN` 指令**：减少镜像层数，加速构建、减小体积。
+3. **使用 `.dockerignore`**：排除无关文件，减小构建上下文大小。
+4. **固定镜像版本**：避免用 `latest`，确保构建一致性。
+5. **非 root 用户运行**：创建普通用户，提升容器安全性。
+6. **合理使用缓存**：将不常变动的指令（如 `COPY package*.json`）放在前面，利用 Docker 缓存加速构建。
+7. **多阶段构建**：分离构建与运行环境，减小最终镜像体积。
+8. **清理无用依赖**：`RUN` 后清理缓存（如 `apt clean`、`npm cache clean`）。
+
+---
+
+#### 六、完整示例（Nginx 静态网站）
+
+##### 1. 项目结构
+
+```
+my-nginx/
+├── Dockerfile
+├── .dockerignore
+└── html/
+    └── index.html
+```
+
+##### 2. `.dockerignore`
+
+```
+.git
+node_modules
+*.log
+.DS_Store
+```
+
+##### 3. `Dockerfile`
+
+```dockerfile
+# 基础镜像
+FROM nginx:1.25-alpine
+
+# 元数据
+LABEL maintainer="user@example.com"
+LABEL version="1.0" description="Nginx Static Website"
+
+# 复制静态文件
+COPY html/ /usr/share/nginx/html/
+
+# 声明端口
+EXPOSE 80
+
+# 启动命令
+CMD ["nginx", "-g", "daemon off;"]
+```
+
+##### 4. 构建与运行
+
+```bash
+# 构建镜像
+docker build -t my-nginx:1.0 .
+
+# 运行容器
+docker run -d -p 8080:80 --name my-nginx-container my-nginx:1.0
+
+# 访问
+curl http://localhost:8080
+```
+
+---
+
+#### 总结
+
+Dockerfile 是容器化应用的核心，通过**指令化、自动化**构建镜像，确保环境一致性、可重复性。掌握核心指令、构建流程、多阶段构建和最佳实践，可高效构建**轻量、安全、可维护**的 Docker 镜像。
+
+### Docker 构建 Java 应用
+
+（超详细 + 最佳实践）
+
+我给你一份**生产环境可用、体积最小、速度最快**的 Java 项目 Docker 构建方案，包含 **Maven / Gradle 项目**、**多阶段构建**、**JDK/JRE 区分**、**启动优化**，直接复制就能用。
+
+#### 一、先搞懂：Java 镜像怎么选？
+
+Java 构建 Docker 镜像分两步：
+1. **构建阶段**：需要 JDK（编译代码、打包）
+2. **运行阶段**：只需要 JRE（运行 jar，更小更安全）
+
+**最佳基础镜像**（轻量 + 官方 + 安全）：
+- `eclipse-temurin:17-jdk-jammy` （构建用 JDK）
+- `eclipse-temurin:17-jre-alpine` （运行用 JRE，极小）
+
+> 不推荐 openjdk:8 之类，已停止维护！
+
+---
+
+#### 二、最简单 Dockerfile（单阶段，适合测试）
+
+适合快速打包，**不追求镜像大小**
+
+```dockerfile
+# 基础镜像（带JDK）
+FROM eclipse-temurin:17-jre-jammy
+
+# 工作目录
+WORKDIR /app
+
+# 复制jar包（把你本地打好的jar放进来）
+COPY target/demo-0.0.1-SNAPSHOT.jar app.jar
+
+# 暴露端口
+EXPOSE 8080
+
+# 启动命令
+ENTRYPOINT ["java", "-jar", "app.jar"]
+```
+
+##### 构建 & 运行
+
+```bash
+# 先打包jar
+mvn clean package -DskipTests
+
+# 构建镜像
+docker build -t java-app:1.0 .
+
+# 运行容器
+docker run -d -p 8080:8080 --name my-java-app java-app:1.0
+```
+
+---
+
+#### 三、生产级方案：多阶段构建（强烈推荐）
+
+**优点**：
+- 最终镜像**极小**（只有几十M）
+- 不包含源码、编译依赖
+- 安全、干净、速度快
+
+##### 最终 Dockerfile（直接复制使用）
+
+```dockerfile
+# ======================
+# 第一阶段：构建（JDK）
+# ======================
+FROM eclipse-temurin:17-jdk-jammy AS builder
+WORKDIR /app
+
+# 先复制pom，利用缓存（重点！加速构建）
+COPY mvnw .
+COPY .mvn .mvn
+COPY pom.xml .
+RUN ./mvnw dependency:go-offline
+
+# 复制源码
+COPY src ./src
+
+# 打包（跳过测试）
+RUN ./mvnw clean package -DskipTests
+
+# ======================
+# 第二阶段：运行（仅JRE）
+# ======================
+FROM eclipse-temurin:17-jre-alpine
+WORKDIR /app
+
+# 从构建阶段复制jar包
+COPY --from=builder /app/target/*.jar app.jar
+
+# 非root运行（安全）
+RUN addgroup -S app && adduser -S app -G app
+USER app
+
+# 端口 + 启动
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "app.jar"]
+```
+
+##### 这个镜像有多小？
+
+- 普通单阶段：~500MB  
+- 多阶段 alpine：~80MB  
+
+**差 6 倍！**
+
+---
+
+#### 四、SpringBoot 专用优化（必加）
+
+给 Java 启动加 JVM 参数，让容器更稳定：
+
+```dockerfile
+ENTRYPOINT ["java", \
+  "-XX:+UseContainerSupport", \
+  "-XX:MaxRAMPercentage=75.0", \
+  "-jar", "app.jar"]
+```
+
+解释：
+- `UseContainerSupport`：让 JVM 识别容器内存
+- `MaxRAMPercentage=75`：限制最大内存占比（避免OOM）
+
+---
+
+#### 五、常用命令速查
+
+```bash
+# 构建镜像
+docker build -t java-app:1.0 .
+
+# 运行
+docker run -d -p 8080:8080 java-app:1.0
+
+# 查看日志
+docker logs -f my-java-app
+
+# 进入容器
+docker exec -it my-java-app sh
+```
+
+---
+
+#### 六、我帮你定制（你只需告诉我）
+
+你直接回复我这 3 个信息，我可以给你**生成专属完美 Dockerfile**：
+1. JDK 版本（8/11/17/21）
+2. SpringBoot 还是普通 Java？
+3. 你的 jar 包名称/路径
+
+### Docker 构建 Vue3 项目
+
+（超简单 + 生产最小镜像）
+
+Vue3 是**前端静态项目**，Docker 构建最佳方案：
+**多阶段构建** → 先用 Node 环境打包编译，再用 Nginx 运行静态文件，最终镜像只有 **20MB 左右**！
+
+---
+
+#### 一、先看你的项目结构（标准 Vue3/Vite 项目）
+
+```
+你的项目/
+├── Dockerfile         # 我们要创建的
+├── .dockerignore      # 可选，推荐
+├── package.json
+├── vite.config.js     或  vue.config.js
+└── src/
+```
+
+---
+
+#### 二、直接可用的 Dockerfile（复制即用）
+
+```dockerfile
+# ======================================
+# 阶段1：构建阶段 —— 编译 Vue3 代码
+# ======================================
+FROM node:18-alpine AS builder
+
+# 设置工作目录
+WORKDIR /app
+
+# 复制依赖文件（利用Docker缓存，加速构建）
+COPY package*.json ./
+
+# 安装依赖（淘宝镜像，速度更快）
+RUN npm config set registry https://registry.npmmirror.com && \
+    npm install
+
+# 复制全部项目代码
+COPY . .
+
+# 打包构建（生成 dist 文件夹）
+RUN npm run build
+
+# ======================================
+# 阶段2：运行阶段 —— Nginx 托管静态文件
+# ======================================
+FROM nginx:stable-alpine
+
+# 复制构建好的 dist 到 Nginx 目录
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# 暴露 80 端口
+EXPOSE 80
+
+# 启动 Nginx
+CMD ["nginx", "-g", "daemon off;"]
+```
+
+---
+
+#### 三、创建 .dockerignore（必须加，减小体积）
+
+创建 `.dockerignore` 文件，写入：
+```
+node_modules
+dist
+.DS_Store
+.git
+.gitignore
+*.log
+```
+
+---
+
+#### 四、一键构建 + 运行
+
+##### 1. 构建镜像
+
+```bash
+docker build -t vue3-app:1.0 .
+```
+
+##### 2. 启动容器
+
+```bash
+docker run -d -p 8080:80 --name my-vue3 vue3-app:1.0
+```
+
+##### 3. 访问
+
+打开浏览器访问：
+```
+http://localhost:8080
+```
+
+---
+
+#### 五、如果你的 Vue 项目路由是 history 模式（必看）
+
+history 模式直接用上面的 Dockerfile 会**刷新 404**，需要加 Nginx 配置：
+
+##### 1. 项目根目录创建 `nginx.conf`
+
+```nginx
+server {
+    listen 80;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # 解决 history 路由刷新 404 问题
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+```
+
+##### 2. 修改 Dockerfile，添加配置
+
+```dockerfile
+# 在运行阶段增加一行
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+```
+
+完整运行阶段：
+```dockerfile
+FROM nginx:stable-alpine
+COPY --from=builder /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
+```
+
+---
+
+#### 六、核心优势
+
+- **超小体积**：最终镜像 ≈ 20MB
+- **生产可用**：Nginx 高性能、稳定
+- **安全干净**：不包含源码、依赖包
+- **速度快**：利用缓存，构建超快
+
+---
+
+#### 七、常用命令
+
+```bash
+# 构建
+docker build -t vue3-app .
+
+# 运行
+docker run -d -p 8080:80 vue3-app
+
+# 停止
+docker stop my-vue3
+
+# 删除容器
+docker rm my-vue3
+```
+
+需要我帮你适配 **Vite + Vue3** 或 **Vue-CLI** 专属版本吗？
+
+##  docker-compose.yml
+
+### docker-compose.yml 完全指南
+
+`docker-compose.yml` 是 **Docker Compose** 的核心配置文件，用于**一键定义、配置和启动多个 Docker 容器**（比如前端、后端、数据库、Redis 一起启动），替代繁琐的 `docker run` 命令。
+
+它使用 **YAML 语法**，文件必须命名为 `docker-compose.yml` 或 `docker-compose.yaml`。
+
+---
+
+#### 一、基础结构（必看）
+
+核心层级：
+```yaml
+# 版本（新版 Compose 可省略）
+version: '3.8'
+
+# 定义所有服务（容器）
+services:
+  服务名称1:
+    配置项: 值
+  服务名称2:
+    配置项: 值
+
+# 可选：数据卷（持久化存储）
+volumes:
+  卷名称:
+
+# 可选：自定义网络
+networks:
+  网络名称:
+```
+
+---
+
+#### 二、最常用配置项
+
+| 配置项           | 作用                                   |
+| ---------------- | -------------------------------------- |
+| `image`          | 使用的镜像（如 `nginx:alpine`）        |
+| `build`          | 从本地 Dockerfile 构建镜像             |
+| `ports`          | 端口映射 `主机端口:容器端口`           |
+| `volumes`        | 目录/文件挂载（持久化）                |
+| `environment`    | 环境变量                               |
+| `networks`       | 加入自定义网络                         |
+| `depends_on`     | 依赖服务（启动顺序）                   |
+| `restart`        | 重启策略（`always`/`no`/`on-failure`） |
+| `container_name` | 自定义容器名                           |
+
+---
+
+#### 三、实战示例（最常用场景）
+
+##### 示例 1：Nginx + MySQL + PHP（Web 环境）
+
+```yaml
+version: '3.8'
+
+services:
+  # Nginx 服务
+  nginx:
+    image: nginx:alpine
+    container_name: my-nginx
+    ports:
+      - "80:80"          # 主机80 → 容器80
+    volumes:
+      - ./html:/usr/share/nginx/html  # 网站目录挂载
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+    restart: always
+    networks:
+      - app-network
+
+  # MySQL 服务
+  mysql:
+    image: mysql:8.0
+    container_name: my-mysql
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: 123456   # root 密码
+      MYSQL_DATABASE: mydb         # 自动创建数据库
+    volumes:
+      - mysql-data:/var/lib/mysql  # 数据持久化
+    restart: always
+    networks:
+      - app-network
+
+# 自定义网络（容器间互通）
+networks:
+  app-network:
+
+# 数据卷（防止数据丢失）
+volumes:
+  mysql-data:
+```
+
+##### 示例 2：单服务（Node.js 应用）
+
+```yaml
+version: '3.8'
+
+services:
+  node-app:
+    build: .                # 从当前目录 Dockerfile 构建
+    container_name: node-app
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+    restart: always
+```
+
+---
+
+#### 四、常用 Docker Compose 命令
+
+在**包含 docker-compose.yml 的目录**下执行：
+
+```bash
+# 启动所有服务（-d 后台运行）
+docker-compose up -d
+
+# 停止所有服务（不删除容器）
+docker-compose stop
+
+# 停止并删除容器、网络
+docker-compose down
+
+# 查看日志
+docker-compose logs -f
+
+# 重启服务
+docker-compose restart
+
+# 查看运行中的服务
+docker-compose ps
+```
+
+---
+
+#### 五、关键注意事项
+
+1. **缩进严格**：YAML 用 2 个空格缩进（不能用 Tab）
+2. **容器互通**：同一网络下，服务名可直接当域名访问（如 Nginx 访问 MySQL：`mysql:3306`）
+3. **数据持久化**：数据库必须挂载 `volumes`，否则删除容器数据会丢失
+4. **重启策略**：生产环境建议用 `restart: always`
+
+---
+
+#### 总结
+
+1. `docker-compose.yml` 用于**批量管理容器**，一键启动整套环境
+2. 核心结构：`services`（容器）+ `volumes`（存储）+ `networks`（网络）
+3. 常用命令：`up -d` 启动、`down` 停止删除、`logs` 查看日志
+4. 生产环境务必做**数据卷挂载**和**自动重启**配置
+
+你需要我根据你的**具体项目**（如 Java/Go/Python/前后端分离）生成专属的 `docker-compose.yml` 吗？
+
 ## 防火墙重置后
 
 虚拟机防火墙重置后，**Docker的iptables规则会被清空**，导致容器端口映射、网络转发失效。

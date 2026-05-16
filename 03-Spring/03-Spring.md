@@ -232,6 +232,7 @@ public class UserService {
 1. **`@Resource` 的特殊限制**：
    - `@Resource` 是 JSR-250 标准注解，仅支持**字段注入**和 **Setter 注入**，不支持构造器注入；
    - `@Resource` 用于 Setter 注入时，默认按「方法名（去掉 set 后首字母小写）」匹配 Bean 名称，而非参数类型：
+     
      ```java
      // @Resource 会先按名称 "userDao"（setUserDao → userDao）匹配 Bean，匹配失败再按类型
      @Resource
@@ -239,7 +240,8 @@ public class UserService {
          this.userDao = myUserDao;
      }
      ```
-
+  ```
+   
 2. **核心结论**：
    - 不能说“`@Autowired`/`@Resource` 属于字段注入”，而应说“`@Autowired`/`@Resource` 可以用于字段注入”；
    - 字段注入只是这两个注解的**使用场景之一**，而非注解本身的属性。
@@ -285,7 +287,7 @@ public class UserService {
 
 ##### 2. 常用用法
 
-```java
+​```java
 // 1. 字段注入（最常用）
 @Autowired
 private UserService userService;
@@ -304,7 +306,7 @@ private UserService userService;
 // 4. 可选依赖（找不到不报错）
 @Autowired(required = false)
 private UserService userService;
-```
+  ```
 
 ##### 3. 适用场景
 
@@ -3000,7 +3002,7 @@ Spring 启动围绕 **`refresh()`**，分为 **12 步**：
 ### 1. 什么是 AOP（面向切面编程）？
 
 **答：**
- AOP（Aspect-Oriented Programming）是**面向切面编程**，用于将横切关注点（如日志、事务、安全等）从核心业务逻辑中分离出来。
+ AOP（Aspect-Oriented Programming）是**面向切面编程**，用于将横切关注点（如日志、事务、权限、安全等）从核心业务逻辑中分离出来。
 
 - **核心概念**：
   - **切面（Aspect）**：封装横切逻辑的模块。
@@ -4646,6 +4648,7 @@ public class UserService {
 ###### 步骤1：开启暴露代理（两种方式）
 
 - **方式1**：启动类/配置类添加 `@EnableAspectJAutoProxy(exposeProxy = true)`
+  
   ```java
   @SpringBootApplication
   @EnableAspectJAutoProxy(exposeProxy = true) // 暴露代理对象
@@ -5079,12 +5082,12 @@ graph TD
 
 1. **客户端发送请求**：浏览器/PostMan 发送 HTTP 请求（如 `http://localhost:8080/user/1`），请求先到达 Tomcat 等 Web 容器，再转发给 Spring MVC 的 `DispatcherServlet`；
 2. **DispatcherServlet 接收请求**：作为“前端控制器”，是 Spring MVC 的核心入口，负责协调所有组件，不处理具体业务；
-3. **HandlerMapping 匹配处理器**：根据请求 URL、请求方式（GET/POST）等信息，查找对应的 `Controller` 方法（如 `UserController#getUserById(Long id)`），返回 `HandlerExecutionChain`（包含 Handler + 拦截器）；
-4. **HandlerAdapter 适配执行**：`HandlerMapping` 找到 Handler 后，`DispatcherServlet` 通过 `HandlerAdapter` 调用 Controller 方法（适配不同的 Controller 实现方式，如注解式 `@Controller`、老式 `Controller` 接口）；
+3. **HandlerMapping 匹配处理器**：根据请求 URL、请求方式（GET/POST）等信息，查找对应的 `Controller` 方法（如 `UserController#getUserById(Long id)`），返回 `HandlerExecutionChain`（包含 Handler + 拦截器）；若存在拦截器则执行preHandler方法，返回True继续执行，返回False则拒绝执行。
+4. **HandlerAdapter 适配执行**：`HandlerMapping` 找到 Handler 后，`DispatcherServlet` 通过 `HandlerAdapter` 调用 Controller 方法（适配不同的 Controller 实现方式，如注解式 `@Controller`、老式 `Controller` 接口）；若存在拦截器则继续执行postHandler方法。
 5. **数据绑定与参数解析**：`HandlerAdapter` 会自动将请求参数（如 URL 中的 `id=1`）绑定到 Controller 方法的参数上（如 `Long id`），支持表单、JSON、路径变量等多种参数类型；
 6. **Controller 处理业务**：执行 Controller 方法，调用 Service/DAO 处理业务逻辑，最终返回 `ModelAndView`（包含数据模型 `Model` 和视图名称，如 `userDetail`）；
 7. **ViewResolver 解析视图**：根据视图名称（如 `userDetail`），结合视图解析器配置（如前缀 `/WEB-INF/views/`、后缀 `.jsp`），解析出具体的视图对象（如 `/WEB-INF/views/userDetail.jsp`）；
-8. **视图渲染**：将 Model 中的数据填充到视图中（如 JSP 中通过 `${user.name}` 获取数据），生成 HTML/JSON 等响应内容；
+8. **视图渲染**：将 Model 中的数据填充到视图中（如 JSP 中通过 `${user.name}` 获取数据），生成 HTML/JSON 等响应内容；渲染后，调用**拦截器**的aftercompletion方法。
 9. **返回响应**：`DispatcherServlet` 将渲染后的响应返回给客户端，完成请求处理。
 
 #### 二、核心组件的作用（关键补充）

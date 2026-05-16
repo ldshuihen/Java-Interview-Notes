@@ -1899,7 +1899,8 @@ Map<Integer, User> listToMap();
 **陷阱/注意：**
 
 - resultMap 写法复杂但灵活，务必确保 column 名正确，避免因别名或大小写差异导致映射失败。
-- 嵌套 mapping 使用 `<select>` 属性会触发额外 SQL（可能导致 N+1 问题），需权衡选择 `join` 或嵌套查询。
+- 嵌套 mapping 使用 `<select>` 属性会触发
+- 额外 SQL（可能导致 N+1 问题），需权衡选择 `join` 或嵌套查询。
 
 **面试延伸：**
 

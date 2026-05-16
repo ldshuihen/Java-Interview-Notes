@@ -1169,6 +1169,85 @@ git commit -m "说明文字"  # 2. 提交到本地
 git push                 # 3. 推送到GitHub
 ```
 
+
+
+#### git push 失败
+
+我来**彻底解决**你这个 Git 报错！
+
+```bash
+24141@DESKTOP-1FVIFSA MINGW64 /e/Desktop/JAVA面试/JAVA-Interview-Self (main)
+$ git push
+fatal: unable to access 'https://github.com/ldshuihen/Java-Interview-Notes.git/': Failed to connect to 127.0.0.1 port 7897 after 2112 ms: Could not connect to server
+
+
+24141@DESKTOP-1FVIFSA MINGW64 /e/Desktop/JAVA面试/JAVA-Interview-Self (main)
+$ git config --global --list
+user.email=ldshuihen@gmail.com
+user.name=ldshuihen
+http.proxy=http://127.0.0.1:7897
+https.proxy=http://127.0.0.1:7897
+safe.directory=*
+
+```
+
+你现在的问题就是：**Git 还在走 127.0.0.1:7897 代理，但代理没开，所以连不上。**
+
+我给你 **3 条命令，复制粘贴直接跑，100% 解决**：
+
+##### 第一步：清空全局代理（必须执行）
+
+```bash
+git config --global --unset http.proxy
+git config --global --unset https.proxy
+```
+
+##### 第二步：清空当前项目代理（必须执行）
+
+```bash
+git config --unset http.proxy
+git config --unset https.proxy
+```
+
+##### 第三步：查看还有没有代理（确认清空）
+
+```bash
+git config --global --list
+```
+如果看不到 **7897** 这行，就成功了！
+
+##### 第四步：再 push
+
+```bash
+git push
+```
+
+---
+
+##### 如果还不行，执行这 2 条（终极清空）
+
+```bash
+git config --global --unset all
+git config --unset all
+```
+
+然后再 push：
+```bash
+git push
+```
+
+---
+
+##### 为什么你会遇到这个问题？
+
+因为你之前开了代理（梯子），Git 自动配置了 `127.0.0.1:7897`
+现在代理关了，Git 还往这个端口发请求 → **连接失败**
+
+---
+
+你**直接复制我上面的命令**，一步一步跑，绝对能解决！
+跑完告诉我结果～
+
 ---
 
 #### 四、必须掌握的高频命令

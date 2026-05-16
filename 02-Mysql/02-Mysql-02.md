@@ -1,5 +1,3 @@
-
-
 ## 数据库「表类型」
 
 ### 1. **主子表（主从表）**
@@ -2887,6 +2885,151 @@ where 索引字段 = 不存在的值
 排查死锁唯一正确方式：show engine innodb status;
 里面会直接告诉你死锁的两条SQL！**
 
+## mysql线上问题排查
+
+**MySQL 线上问题排查指南**（系统化 checklist，2026 年实用版）
+
+线上 MySQL 问题通常表现为：**慢查询、CPU/磁盘高、连接失败、死锁、复制延迟、主从不一致** 等。排查核心思路是：**监控 → 定位 → 分析 → 优化 → 验证**，尽量减少对生产的影响。
+
+### 1. 快速定位问题类型（先问自己这些问题）
+
+- **响应慢 / 超时** → 慢查询？锁等待？CPU/IO 高？
+- **连接失败 / Too many connections** → 连接数爆满？连接泄漏？
+- **CPU 100%** → 慢 SQL + 全表扫描 + 排序？
+- **磁盘 IO 高** → 刷脏页？日志写入？慢查询回表？
+- **死锁 / 等待** → 事务设计问题？
+- **主从延迟** → 复制问题？
+- **突然不可用** → OOM？崩溃？网络/磁盘满？
+
+---
+
+### 2. 常用排查命令（必备）
+
+#### **基础状态查看**
+```sql
+-- 当前正在执行的线程（最常用！）
+SHOW PROCESSLIST;          -- 简版
+SHOW FULL PROCESSLIST;     -- 带完整SQL
+
+-- InnoDB 引擎详细状态（死锁、事务、缓冲池关键信息）
+SHOW ENGINE INNODB STATUS\G
+
+-- 全局/会话状态变量
+SHOW GLOBAL STATUS LIKE '%Threads%';   -- 连接数
+SHOW GLOBAL STATUS LIKE 'Innodb%';     -- InnoDB 指标
+SHOW GLOBAL VARIABLES LIKE '%max_connections%';
+```
+
+#### **慢查询相关**
+```sql
+-- 查看慢查询配置
+SHOW VARIABLES LIKE '%slow_query%';
+SHOW VARIABLES LIKE 'long_query_time';
+
+-- 开启慢查询（临时）
+SET GLOBAL slow_query_log = ON;
+SET GLOBAL long_query_time = 1;   -- 1秒以上
+```
+
+**分析工具**：
+- `pt-query-digest`（Percona Toolkit）—— 最推荐，分析 slow.log。
+- `mysqldumpslow`（MySQL 自带）。
+
+```bash
+pt-query-digest --limit=10 /var/log/mysql/slow.log
+```
+
+#### **锁与事务**
+```sql
+-- 正在运行的事务
+SELECT * FROM information_schema.INNODB_TRX;
+
+-- 锁等待
+SELECT * FROM information_schema.INNODB_LOCK_WAITS;
+
+-- 当前锁信息（MySQL 8.0+）
+SELECT * FROM performance_schema.data_locks;
+```
+
+#### **复制状态**
+```sql
+-- 主库
+SHOW MASTER STATUS;
+
+-- 从库
+SHOW SLAVE STATUS\G     -- 或 SHOW REPLICA STATUS\G（新版本）
+```
+
+---
+
+### 3. 常见问题排查流程
+
+**场景1：CPU/内存/磁盘高**
+1. `top` / `htop` → 确认 mysqld 进程资源占用。
+2. `iostat -x 1`、`iotop` → 看 IO。
+3. `SHOW PROCESSLIST` → 找到长时间运行的 SQL。
+4. `EXPLAIN` 该 SQL → 检查是否走索引、类型、rows。
+5. 优化：加索引、改写 SQL、增加缓冲池（`innodb_buffer_pool_size`）。
+
+**场景2：慢查询**
+1. 开启并分析慢日志（pt-query-digest）。
+2. 重点关注：`Exec Time`、`Rows Examined`、`Rows Sent` 差距大的 SQL。
+3. 优化顺序：索引 → SQL 改写 → 分页优化（深分页用游标）→ 拆表。
+
+**场景3：死锁**
+1. `SHOW ENGINE INNODB STATUS\G` → 找到 `LATEST DETECTED DEADLOCK` 部分。
+2. 分析两个事务持有的锁和等待的锁。
+3. 常见原因：**事务顺序不一致、范围更新、索引不准、长事务**。
+4. 解决：统一加锁顺序、缩小事务范围、使用 `SELECT ... FOR UPDATE` 时加索引、降低隔离级别（Read Committed）。
+
+**场景4：Too many connections**
+- 检查 `max_connections`、`wait_timeout`、`interactive_timeout`。
+- 应用层连接池是否合理（连接泄漏？）。
+- 是否有长事务/慢查询占满连接。
+
+**场景5：复制延迟（Replication Lag）**
+- `SHOW REPLICA STATUS\G` → 看 `Seconds_Behind_Master`、`Relay_Log_Space`。
+- 常见原因：从库慢 SQL、单线程回放、大事务、无索引、IO 压力、网络。
+- 优化：并行复制（`replica_parallel_workers`）、加从库索引、Binlog 压缩、分批大事务。
+
+---
+
+### 4. 监控与预防建议
+
+**必备监控指标**：
+- QPS / TPS
+- 慢查询数量
+- 连接数 / 线程数
+- InnoDB 缓冲池命中率（>95% 较好）
+- 磁盘 IO util、iops
+- 主从延迟
+- 死锁次数
+
+**工具推荐**：
+- **Percona Monitoring and Management (PMM)** —— 强烈推荐
+- **MySQL Enterprise Monitor**
+- **Prometheus + Grafana + mysqld_exporter**
+- 云厂商监控（阿里云 RDS、AWS CloudWatch 等）
+
+**预防最佳实践**：
+- 所有上线 SQL 必须 `EXPLAIN` 审核。
+- 事务尽量短，避免大事务。
+- 重要表建立合理**复合索引**。
+- 定期 `ANALYZE TABLE` / `OPTIMIZE TABLE`。
+- 使用读写分离 + 连接池 + 限流。
+- 重要操作增加重试机制和熔断。
+
+---
+
+**排查时请提供以下信息，我可以给出更针对性的建议**：
+- 具体问题现象（报错、监控图、慢日志截图）
+- MySQL 版本（`SELECT VERSION();`）
+- 表结构 + 执行计划（`EXPLAIN`）
+- `SHOW ENGINE INNODB STATUS` 输出片段
+- 是单机还是主从？数据量多大？QPS 大概多少？
+
+把问题描述得越详细，定位越快！你当前遇到的具体 MySQL 线上问题是什么？可以贴关键日志或监控截图，我帮你一起分析。
+
 ## Mysql深分页问题
 
 ### 一、什么是深分页问题？
@@ -4183,3 +4326,132 @@ MySQL 分页性能问题：
 2. **延迟关联（最通用）**
 3. **产品限制禁止深翻页**
 4. **游标（理论可行，但 MySQL 不用）**
+
+### **MySQL 深分页（Deep Pagination）问题及解决方案**（2026 年最新推荐）
+
+#### 1. 什么是深分页问题？
+
+传统分页写法：
+```sql
+SELECT * FROM table_name 
+WHERE ... 
+ORDER BY create_time DESC, id DESC 
+LIMIT 100000, 10;   -- 第10001页，每页10条
+```
+
+**问题本质**：
+- MySQL 会先扫描并排序 `offset + limit` 行数据（这里是 100010 行）。
+- 然后丢弃前 100000 行，只返回最后 10 行。
+- 随着页码增大，性能**线性下降**，甚至导致超时、CPU/IO 飙升。
+
+在大表（百万级以上）中，第 1 页可能几毫秒，第 1000 页可能几秒甚至几十秒。
+
+#### 2. 推荐解决方案（按优先级排序）
+
+##### **方案一：游标分页（Cursor / Keyset Pagination）—— 最推荐**
+
+这是目前业界公认解决深分页的最佳方式，性能接近 **O(1)**，与页码深度无关。
+
+**核心思想**：不再用 `OFFSET`，而是用“上一页最后一条记录的值”作为下一页的过滤条件。
+
+```sql
+-- 第一页
+SELECT * FROM sys_order 
+WHERE status = 1 
+ORDER BY create_time DESC, id DESC 
+LIMIT 20;
+
+-- 下一页（假设上一页最后一条的 create_time = '2026-05-01 12:00:00', id = 12345）
+SELECT * FROM sys_order 
+WHERE status = 1 
+  AND (create_time < '2026-05-01 12:00:00' 
+       OR (create_time = '2026-05-01 12:00:00' AND id < 12345))
+ORDER BY create_time DESC, id DESC 
+LIMIT 20;
+```
+
+**优点**：
+- 利用索引直接定位，几乎不扫描无用数据。
+- 支持无限向下翻页，性能稳定。
+- 适合无限滚动（Infinite Scroll）、Feed 流。
+
+**缺点**：无法直接跳转到“第 100 页”，适合“下一页/加载更多”场景。
+
+**MyBatis 示例**（推荐）：
+```xml
+<select id="selectNextPage">
+    SELECT * FROM sys_order
+    WHERE status = #{status}
+      <if test="lastTime != null">
+        AND (create_time < #{lastTime} 
+             OR (create_time = #{lastTime} AND id < #{lastId}))
+      </if>
+    ORDER BY create_time DESC, id DESC
+    LIMIT #{size}
+</select>
+```
+
+##### **方案二：延迟关联（Deferred Join / 子查询优化）**
+
+在必须使用 `OFFSET` 时使用，能显著提升性能。
+
+```sql
+-- 优化前（慢）
+SELECT * FROM big_table ORDER BY id LIMIT 100000, 10;
+
+-- 优化后（快很多）
+SELECT t.* 
+FROM (
+    SELECT id FROM big_table 
+    ORDER BY id 
+    LIMIT 100000, 10
+) AS tmp
+JOIN big_table t ON t.id = tmp.id
+ORDER BY t.id;
+```
+
+原理：子查询只查主键（走覆盖索引），然后再关联取完整记录，减少回表量。
+
+##### **方案三：覆盖索引优化**
+
+给查询字段建立**覆盖索引**，让整个查询只走索引，不回表。
+
+```sql
+-- 建立覆盖索引
+CREATE INDEX idx_status_time_id ON table_name(status, create_time, id);
+
+-- 查询时只查索引覆盖的字段
+SELECT id, create_time, status, title 
+FROM table_name 
+ORDER BY create_time DESC 
+LIMIT 100000, 10;
+```
+
+##### **方案四：其他实用方法**
+
+- **禁止超大页码**：在业务层限制最大页码（如最多允许查到第 500 页）。
+- **异步 + 缓存**：深度分页结果缓存到 Redis。
+- **分表 + Elasticsearch**：超大规模场景，把搜索和分页交给 ES。
+- **物化表 / 预计算**：对静态数据定期生成序号字段。
+
+#### 3. 性能对比（典型百万级表）
+
+| 分页方式           | 第1页 | 第1000页（offset≈10000） | 第10000页 | 推荐指数 |
+| ------------------ | ----- | ------------------------ | --------- | -------- |
+| 传统 LIMIT offset  | 快    | 明显变慢                 | 极慢      | ★☆☆☆☆    |
+| 延迟关联           | 快    | 较快                     | 中等      | ★★★☆☆    |
+| 游标分页（Cursor） | 快    | 极快（几乎不变）         | 极快      | ★★★★★    |
+| 覆盖索引 + 优化    | 更快  | 快                       | 较快      | ★★★★☆    |
+
+#### 4. 实用建议
+
+1. **新项目优先使用游标分页**（尤其是移动端、Feed 流）。
+2. **后台管理系统**（需要跳页）可结合**延迟关联 + 覆盖索引**。
+3. 必须返回总页数/总条数时，可单独用 `COUNT(*)`（或近似值）。
+4. 建立正确的**复合索引**（排序字段 + 查询条件）。
+5. 大表建议配合 **TiDB / PolarDB / CockroachDB** 等分布式数据库，或直接上搜索引擎。
+
+---
+
+你当前的项目是**后台管理系统**（需要跳页）还是**移动端 Feed 流**（无限加载）？  
+表结构大概是什么（主要排序字段和查询条件）？我可以给你**最精确的 SQL + MyBatis 示例**。

@@ -2918,136 +2918,7 @@ spring:
 
 **SpringBoot 内置 Jackson，自动完成对象与 JSON 互转，通过注解控制字段格式，也可使用 ObjectMapper 或 Fastjson2 手动处理。**
 
-### @Async 注解
 
-一句话概括：
-**@Async 是 Spring 提供的异步方法注解，让方法在独立线程中执行，不阻塞当前主线程。**
-
----
-
-#### 一、基本作用
-
-- 被 `@Async` 标记的方法，会**由 Spring 在线程池里另开线程执行**
-- 主线程不用等它执行完，直接继续往下走
-- 常用于：发送短信、邮件、日志记录、消息推送、耗时操作异步化
-
----
-
-#### 二、使用步骤（必须做 2 步）
-
-##### 1. 启动类开启异步支持
-
-```java
-@SpringBootApplication
-@EnableAsync // 关键！开启异步
-public class Application {
-    public static void main(String[] args) {
-        SpringApplication.run(Application.class, args);
-    }
-}
-```
-
-##### 2. 在方法上加 @Async
-
-```java
-@Service
-public class AsyncService {
-
-    // 异步方法
-    @Async
-    public void sendSms() {
-        // 模拟耗时
-        try { Thread.sleep(3000); } catch (Exception e) {}
-        System.out.println("短信发送完成");
-    }
-}
-```
-
-调用它：
-```java
-@RestController
-public class TestController {
-    @Autowired
-    private AsyncService asyncService;
-
-    @GetMapping("/test")
-    public String test() {
-        System.out.println("开始");
-        asyncService.sendSms(); // 不阻塞
-        System.out.println("结束");
-        return "ok";
-    }
-}
-```
-
-输出顺序：
-```
-开始
-结束
-短信发送完成
-```
-
----
-
-#### 三、有返回值的异步方法
-
-用 `Future` 或 `CompletableFuture`：
-```java
-@Async
-public CompletableFuture<String> asyncMethod() {
-    return CompletableFuture.completedFuture("异步结果");
-}
-```
-
----
-
-#### 四、自定义线程池（生产必须配置）
-
-默认线程池简单，生产会有性能问题，建议自定义：
-```java
-@Configuration
-public class AsyncConfig {
-    @Bean
-    public Executor taskExecutor() {
-        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(5);
-        executor.setMaxPoolSize(10);
-        executor.setQueueCapacity(200);
-        executor.setThreadNamePrefix("async-");
-        executor.initialize();
-        return executor;
-    }
-}
-```
-
----
-
-#### 五、使用注意事项（高频坑点）
-
-1. **必须是 Spring 管理的 Bean（@Service/@Component）**
-2. **不能在同一个类内部调用**（this.method() 不会异步）
-   必须注入后调用
-3. 方法必须是 **public**
-4. 异步方法抛出异常主线程感知不到，需要自己捕获或用异常处理器
-5. 事务不生效：异步方法和主线程不在一个事务里
-
----
-
-#### 六、面试标准答案（背这段）
-
-`@Async` 是 Spring 提供的异步调用注解，需要配合 `@EnableAsync` 开启。
-它会将方法提交到线程池中异步执行，不阻塞主线程，适用于短信、邮件、日志等耗时操作。
-使用时注意不能内部调用、方法必须 public，生产环境建议自定义线程池，避免默认线程池导致的性能问题。
-
----
-
-#### 七、极简口诀
-
-**@Async 开异步，EnableAsync 不能少。
-同类调用不生效，公共方法才有效。
-生产要配线程池，性能安全更可靠。**
-
-需要我给你写一个**可直接复制的生产级异步线程池配置**吗？
 
 ------
 
@@ -5997,6 +5868,284 @@ asyncService.asyncTask(); // 不阻塞调用线程
   2. 调用方法时，代理将任务提交到 **线程池（默认 SimpleAsyncTaskExecutor）** 执行。
   3. 可返回 `void`、`Future` 或 `CompletableFuture`，方便异步结果处理。
 - **注意：** 只有通过 Spring 容器代理对象调用的 `@Async` 方法才有效，**同类内部调用无效**。
+
+### @Async 注解
+
+一句话概括：
+**@Async 是 Spring 提供的异步方法注解，让方法在独立线程中执行，不阻塞当前主线程。**
+
+---
+
+#### 一、基本作用
+
+- 被 `@Async` 标记的方法，会**由 Spring 在线程池里另开线程执行**
+- 主线程不用等它执行完，直接继续往下走
+- 常用于：发送短信、邮件、日志记录、消息推送、耗时操作异步化
+
+---
+
+#### 二、使用步骤（必须做 2 步）
+
+##### 1. 启动类开启异步支持
+
+```java
+@SpringBootApplication
+@EnableAsync // 关键！开启异步
+public class Application {
+    public static void main(String[] args) {
+        SpringApplication.run(Application.class, args);
+    }
+}
+```
+
+##### 2. 在方法上加 @Async
+
+```java
+@Service
+public class AsyncService {
+
+    // 异步方法
+    @Async
+    public void sendSms() {
+        // 模拟耗时
+        try { Thread.sleep(3000); } catch (Exception e) {}
+        System.out.println("短信发送完成");
+    }
+}
+```
+
+调用它：
+
+```java
+@RestController
+public class TestController {
+    @Autowired
+    private AsyncService asyncService;
+
+    @GetMapping("/test")
+    public String test() {
+        System.out.println("开始");
+        asyncService.sendSms(); // 不阻塞
+        System.out.println("结束");
+        return "ok";
+    }
+}
+```
+
+输出顺序：
+
+```
+开始
+结束
+短信发送完成
+```
+
+---
+
+#### 三、有返回值的异步方法
+
+用 `Future` 或 `CompletableFuture`：
+
+```java
+@Async
+public CompletableFuture<String> asyncMethod() {
+    return CompletableFuture.completedFuture("异步结果");
+}
+```
+
+---
+
+#### 四、自定义线程池（生产必须配置）
+
+默认线程池简单，生产会有性能问题，建议自定义：
+
+```java
+@Configuration
+public class AsyncConfig {
+    @Bean
+    public Executor taskExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(5);
+        executor.setMaxPoolSize(10);
+        executor.setQueueCapacity(200);
+        executor.setThreadNamePrefix("async-");
+        executor.initialize();
+        return executor;
+    }
+}
+```
+
+---
+
+#### 五、使用注意事项（高频坑点）
+
+1. **必须是 Spring 管理的 Bean（@Service/@Component）**
+2. **不能在同一个类内部调用**（this.method() 不会异步）
+   必须注入后调用
+3. 方法必须是 **public**
+4. 异步方法抛出异常主线程感知不到，需要自己捕获或用异常处理器
+5. 事务不生效：异步方法和主线程不在一个事务里
+
+---
+
+#### 六、面试标准答案（背这段）
+
+`@Async` 是 Spring 提供的异步调用注解，需要配合 `@EnableAsync` 开启。
+它会将方法提交到线程池中异步执行，不阻塞主线程，适用于短信、邮件、日志等耗时操作。
+使用时注意不能内部调用、方法必须 public，生产环境建议自定义线程池，避免默认线程池导致的性能问题。
+
+---
+
+#### 七、极简口诀
+
+**@Async 开异步，EnableAsync 不能少。
+同类调用不生效，公共方法才有效。
+生产要配线程池，性能安全更可靠。**
+
+### **自定义线程池后如何使用**（完整详解）
+
+#### 1. 推荐方式：实现 `AsyncConfigurer`（全局默认线程池）
+
+这是最常用、最推荐的方式，自定义的线程池会成为**默认异步线程池**。
+
+```java
+@Configuration
+@EnableAsync
+public class AsyncConfig implements AsyncConfigurer {
+
+    @Override
+    public Executor getAsyncExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        
+        executor.setCorePoolSize(10);           // 核心线程数
+        executor.setMaxPoolSize(50);            // 最大线程数
+        executor.setQueueCapacity(200);         // 阻塞队列容量
+        executor.setKeepAliveSeconds(60);       // 空闲线程存活时间
+        executor.setThreadNamePrefix("Async-Default-");  // 线程名称前缀
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy()); // 拒绝策略
+        executor.initialize();
+        
+        return executor;
+    }
+
+    // 可选：自定义异常处理
+    @Override
+    public AsyncUncaughtExceptionHandler getAsyncUncaughtExceptionHandler() {
+        return (ex, method, params) -> {
+            System.err.println("异步方法异常：" + method.getName());
+            ex.printStackTrace();
+        };
+    }
+}
+```
+
+**使用方式**（最简单）：
+
+```java
+@Async   // 不写名称，默认使用上面配置的线程池
+public void sendEmail() { ... }
+
+@Async
+public CompletableFuture<String> processData() { ... }
+```
+
+---
+
+#### 2. 定义多个命名线程池（推荐生产环境）
+
+当你有不同类型的异步任务（IO密集型、CPU密集型、邮件、推送等）时，建议定义多个线程池。
+
+```java
+@Configuration
+@EnableAsync
+public class AsyncConfig {
+
+    @Bean("emailExecutor")          // 邮件线程池
+    public ThreadPoolTaskExecutor emailExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(5);
+        executor.setMaxPoolSize(20);
+        executor.setQueueCapacity(100);
+        executor.setThreadNamePrefix("Async-Email-");
+        executor.initialize();
+        return executor;
+    }
+
+    @Bean("notifyExecutor")         // 推送/通知线程池
+    public ThreadPoolTaskExecutor notifyExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(8);
+        executor.setMaxPoolSize(30);
+        executor.setQueueCapacity(200);
+        executor.setThreadNamePrefix("Async-Notify-");
+        executor.initialize();
+        return executor;
+    }
+
+    @Bean("heavyTaskExecutor")      // 重任务线程池
+    public ThreadPoolTaskExecutor heavyTaskExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(10);
+        executor.setMaxPoolSize(40);
+        executor.setQueueCapacity(500);
+        executor.setThreadNamePrefix("Async-Heavy-");
+        executor.initialize();
+        return executor;
+    }
+}
+```
+
+**使用方式**：
+
+```java
+@Service
+public class AsyncService {
+
+    @Async("emailExecutor")
+    public void sendComplexEmail() {
+        // 发送邮件...
+        System.out.println("邮件线程：" + Thread.currentThread().getName());
+    }
+
+    @Async("notifyExecutor")
+    public CompletableFuture<Boolean> pushNotification() {
+        // 推送...
+        return CompletableFuture.completedFuture(true);
+    }
+
+    @Async("heavyTaskExecutor")
+    public void generateReport() {
+        // 生成报表等重任务
+    }
+}
+```
+
+---
+
+#### 3. 常用配置参数说明
+
+| 参数                     | 建议值                         | 说明                     |
+| ------------------------ | ------------------------------ | ------------------------ |
+| corePoolSize             | 10~20                          | 常驻线程数               |
+| maxPoolSize              | 50~100                         | 最大线程数               |
+| queueCapacity            | 100~1000                       | 队列容量（满了才扩线程） |
+| keepAliveSeconds         | 60                             | 空闲线程回收时间         |
+| threadNamePrefix         | "Async-XXX-"                   | 方便日志排查             |
+| RejectedExecutionHandler | CallerRunsPolicy / AbortPolicy | 拒绝策略                 |
+
+---
+
+**小贴士**：
+
+- 生产环境**强烈建议**监控线程池状态（可集成 Micrometer + Prometheus）。
+- 队列容量不要太大，避免内存溢出。
+- 不同业务使用不同线程池，避免互相影响。
+- `@Async` 方法仍然要注意**不能在本类中自调用**。
+
+---
+
+你目前是想用**单个全局线程池**，还是**多个不同名称的线程池**？  
+或者有具体的业务场景（比如发邮件、处理文件、第三方接口调用等），我可以给你更针对性的配置。
 
 ------
 
