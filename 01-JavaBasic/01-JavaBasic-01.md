@@ -2100,14 +2100,65 @@ b = Byte.valueOf(temp); // 方法内的局部变量b指向新对象，但外部b
 
 #### **6.为什么 Java 要提供包装类？包装类有哪些常用的方法？**
 
-Java 提供包装类的原因：
+**Java 是面向对象语言，基本类型不属于对象**
 
-- 基本数据类型不能作为对象使用，例如不能存储在集合中。
-- 可以通过包装类对象调用方法，支持更多的功能（如字符串转化、对象比较等）。
-   包装类的常用方法：
-- `parseXxx(String)`：将字符串转换为基本数据类型。
-- `valueOf(Xxx)`：返回对应类型的包装类对象。
-- `intValue()`、`longValue()` 等：将包装类对象转换为对应的基本数据类型。
+基本数据类型（`int`/`char`/`double` 等）没有对象属性、不能调用方法，包装类把它们变成**对象**，符合 Java 面向对象设计。
+
+**集合（Collection）只能存储对象，不能存基本类型**
+
+`List`、`Set`、`Map` 不支持 `int`、`char` 等，必须用 `Integer`、`Character` 包装类。
+
+**提供丰富的工具方法**
+
+包装类内置字符串互转、最大值、最小值、类型判断等功能，基本类型无法直接实现。
+
+**支持泛型、反射、多态等高级特性**
+
+泛型 `<T>` 只能接收引用类型，不能用基本类型；方法参数需要对象时，必须使用包装类。
+
+##### 包装类常用方法（高频必考）
+
+###### 1. 字符串 → 基本类型
+
+```
+parseXxx(String s)
+```
+
+例：`Integer.parseInt("123")` → `int 123`
+
+###### 2. 基本类型 / 字符串 → 包装类对象
+
+```
+valueOf(参数)
+```
+
+例：`Integer.valueOf(10)`、`Integer.valueOf("20")`
+
+###### 3. 包装类对象 → 基本类型
+
+```
+xxxValue()
+```
+
+例：`Integer.intValue()`、`Double.doubleValue()`
+
+###### 4. 获取类型常量（常用）
+
+- `MAX_VALUE`：最大值
+
+- MIN_VALUE：最小值
+
+  例：Integer.MAX_VALUE
+
+###### 5. 类型判断方法（Character 独有）
+
+- `Character.isDigit(char)`：判断是否数字
+- `Character.isLetter(char)`：判断是否字母
+- `Character.isUpperCase(char)`：是否大写
+
+###### 6. 比较两个值
+
+`compare(a, b)`：返回 int 结果（-1、0、1）
 
 #### **7.在进行包装类对象比较时，使用 == 和 equals() 方法有什么区别？**
 

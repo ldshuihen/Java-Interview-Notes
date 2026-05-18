@@ -104,3 +104,150 @@ Milvus 和 FAISS 的关系，可以用 **“汽车与发动机”** 的关系来
 ### 总结
 **FAISS 是 Milvus 的“心”。** 
 如果你现在的项目只是个人学习或小规模演示，FAISS 是最高效的选择；但如果你要把这个 Agent 系统做成一个像“钉钉”或“飞书”那样给几万个员工使用的企业应用，你最终一定会迁移到 Milvus 或类似的向量数据库。
+
+
+
+
+
+
+
+# LangGraph 全体系核心组件大全
+除了你学过的 **StateGraph**、**Command**，下面是 LangGraph 全套核心模块，按功能分类整理，全覆盖开发/面试常用内容
+
+## 一、流程控制 & 路由类
+1. **START / END**
+   图固定起点、终点常量，所有流程图必备
+2. **Send**
+   跨节点/子图**传参调用**，并行分发、批量调用节点专用
+3. **interrupt**
+   代码内手动暂停流程，实现人工介入、暂停等待输入
+4. **Branch 分支体系**
+   除条件边外，内置路由分支工具
+
+## 二、状态 & 合并器
+1. **reducer 合并器**
+   - `add_messages`：对话消息默认合并（追加）
+   - `operator.add`：数值累加
+   - `operator.or_`：布尔合并
+   - 自定义 reducer：实现覆盖、清空、去重等状态策略
+2. **MessagesState**
+   LangGraph 内置**开箱即用对话状态**，自带 messages 字段+消息合并器，不用自己写 TypedDict
+3. **Annotated**
+   给状态字段**绑定指定 reducer**，精准控制字段更新规则
+
+## 三、节点专用组件
+
+1. **ToolNode**
+   统一工具调用标准节点，自动解析 tool_call、执行工具、封装返回
+2. **AgentNode**
+   智能体推理专用节点，对接大模型生成工具调用
+3. **InjectedToolCallId**
+   工具内注入调用ID，配合 Command 实现工具内跳转
+4. **RunnableConfig**
+   全局配置上下文，传线程ID、用户ID、自定义参数、权限标识
+
+## 四、记忆 & 持久化（Checkpointer 全家桶）
+
+1. **MemorySaver**
+   内存级记忆，临时断点续跑，本地测试首选
+2. **SqliteSaver**
+   本地文件数据库持久化，单机长期存会话
+3. **PostgresSaver**
+   生产级分布式记忆，线上项目主流
+4. **BaseCheckpointer**
+   记忆抽象基类，自定义存储实现
+5. **Thread ID 会话机制**
+   基于线程ID隔离多用户对话、多轮会话
+
+## 五、人机交互 HITL 核心
+
+1. **interrupt_before**
+   执行**节点前**暂停，人工审批
+2. **interrupt_after**
+   执行**节点后**暂停，确认结果再继续
+3. **Resume 恢复机制**
+   搭配 Command(resume=xxx) 外部传入数据唤醒流程
+
+## 六、子图 & 模块化
+
+1. **Subgraph**
+   图嵌套，拆分复杂业务为独立子流程
+2. **GraphBuilder**
+   通用构图基类，StateGraph 父类
+3. **Parent/Child 图通信**
+   Command(graph=Command.PARENT) 父子图互相跳转
+
+## 七、流式 & 事件回调
+
+1. **stream 流式输出**
+   逐节点、逐消息分片返回
+2. **stream_mode**
+   三种模式：values / updates / debug
+3. **回调 CallbackHandler**
+   监听节点开始、结束、工具调用、LLM 调用全生命周期事件
+
+## 八、工具生态配套
+
+1. **LangGraph Tool**
+   适配图流程的专用工具定义规范
+2. **ToolExecutor**
+   批量管理、调度多工具
+3. **SafeTool**
+   安全沙盒工具，限制高危操作
+
+## 九、调试 & 可视化
+
+1. **get_graph()**
+   获取图结构对象
+2. **draw_mermaid / draw_png**
+   一键生成流程图
+3. **debug 调试模式**
+   打印每一步状态变更、路由走向
+4. **GraphInspector**
+   图结构解析、节点边查询工具
+
+## 十、异步 & 并发
+
+1. **ainvoke / astream**
+   全链路异步执行
+2. **并行边**
+   一条边同时触发多个节点并发运行
+3. **Batch 批量执行**
+   批量批量调用图流程
+
+## 十一、高级架构组件
+
+1. **LangGraph Cloud**
+   云端部署、托管、API 托管、会话托管
+2. **Assistant API**
+   开箱即用智能体助手封装
+3. **StateSnapshot**
+   状态快照、回滚历史会话状态
+4. **Pregel 底层引擎**
+   LangGraph 底层调度引擎（所有图都基于 Pregel 分布式计算模型）
+
+## 十二、类型注解专用
+
+```python
+from langgraph.types import (
+    Command,
+    Send,
+    interrupt,
+    Interrupt,
+    ResumeValue,
+    StreamMode
+)
+```
+
+---
+
+# 最简学习优先级（按实用排序）
+1. StateGraph + MessagesState（必学基础）
+2. Command 动态路由
+3. Checkpointer 记忆持久化
+4. ToolNode 工具调用流程
+5. interrupt 人机暂停
+6. Send 并行/子图传参
+7. 流式 stream + 调试可视化
+
+需要我给你整理**LangGraph 全套导入清单**，或者**高频面试所有组件考点**吗？
