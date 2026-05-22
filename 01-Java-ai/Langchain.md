@@ -1,3 +1,3185 @@
+# MCP & Skills
+
+---
+
+## 一、MCP（模型上下文协议）原理
+
+### 1. 定位与本质
+- **MCP = Model Context Protocol**，由 Anthropic 于 2024 年底开源。
+- **不是框架/SDK，而是一套协议标准**，类似 HTTP：规定“AI 智能体 ↔ 外部工具/数据源”怎么对话、怎么发现能力、怎么交换上下文。
+- 一句话：**AI 世界的统一“USB‑C 接口”**，解决“每个工具都要单独适配”的碎片化问题。
+
+### 2. 核心架构：Client–Server（客户端–服务端）
+三层角色，解耦彻底：
+
+1. **Host（宿主）**
+   - AI 应用本身：Claude Desktop、Cursor、VS Code、自研 Agent 等。
+   - 负责：用户交互、LLM 调用、安全策略、会话管理。
+
+2. **MCP Client（客户端，内嵌在 Host 里）**
+   - 一个 Client 对应一个 Server，一对一连接。
+   - 负责：协议编解码、消息收发、与 LLM 对接。
+
+3. **MCP Server（服务端，轻量独立进程）**
+   - 对外暴露三类标准化能力：
+     - **Tools**：可调用函数（如查数据库、运行脚本、调用 API）
+     - **Resources**：可读取数据（文件、日志、知识库）
+     - **Prompts**：可复用提示词模板。
+   - 传输层：**stdio（子进程）或 SSE（HTTP 长连接）**。
+
+### 3. 通信基础：JSON‑RPC 2.0
+所有消息都是标准 JSON‑RPC 请求/响应：
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": { ... }
+}
+```
+
+### 4. 会话生命周期（4 步）
+1. **连接建立**：Client ↔ Server 建立 stdio/SSE 连接。
+2. **初始化（initialize）**：交换协议版本、能力集（Capabilities）。
+3. **正常交互**：
+   - Client：获取工具列表 → 调用工具 → 读取资源
+   - Server：执行并返回结果。
+4. **关闭连接**：任意一方断开，会话结束。
+
+### 5. 核心价值
+- **统一接口，即插即用**：一次实现，所有 MCP 客户端可用。
+- **语言无关、环境无关**：任何语言（Python/Java/Go）都能实现 Server。
+- **安全隔离**：Server 独立进程，权限可控。
+
+---
+
+## 二、Skills（Agent 技能框架）原理
+
+### 1. 定位与本质
+- **Skills = Agent Skills**，Anthropic 推出的**能力封装框架**，让 Claude 等智能体拥有“可复用、可组合、可控”的专业技能。
+- 一句话：**把“领域知识 + 标准流程 + 工具调用”打包成可复用模块**，让 AI 按规范干活，减少幻觉、节省 Token。
+
+### 2. Skill 的目录结构（标准化）
+一个 Skill 就是一个文件夹：
+```
+my-skill/
+├── SKILL.md       # 核心：自然语言写的使用说明、步骤、注意事项（必须）
+├── scripts/       # 可选：可执行脚本（Python/Bash）
+├── references/    # 可选：参考文档、模板
+└── assets/        # 可选：资源文件
+```
+
+
+### 3. 核心机制：三级渐进式加载（按需触发，极致省 Token）
+#### Level 1：元数据（始终加载，轻量）
+- YAML 定义：`name` + `description`（约 100 Token）。
+- 作用：AI 启动时全量加载，**知道有什么技能、什么时候用**。
+
+#### Level 2：说明文档（触发时加载，中量）
+- 用户请求匹配元数据描述 → AI 读取 `SKILL.md` 全文（<5000 Token）。
+- 作用：拿到**详细步骤、最佳实践、约束条件**。
+
+#### Level 3：脚本/资源（执行时加载，按需）
+- 步骤需要执行脚本 → 沙盒中运行 `scripts/` 代码。
+- 作用：**真正干活，操作文件/命令行/API**。
+
+
+
+### 4. 运行时流程
+1. 用户提问 → LLM 匹配 Skill 元数据 → 命中某 Skill。
+2. LLM 下发指令 → 读取 `SKILL.md` → 解析步骤。
+3. 按步骤调用工具/执行脚本 → 沙盒执行 → 返回结果。
+4. LLM 整合结果 → 自然语言回答用户。
+
+
+
+### 5. 核心价值
+- **复用性**：一次写好，所有对话可用。
+- **可控性**：明确定义流程与边界，**大幅减少幻觉**。
+- **可组合性**：多个 Skill 串联成复杂工作流。
+- **经济高效**：**平时不占上下文，只在需要时加载**，显著省 Token。
+
+---
+
+## 三、MCP vs Skills：关系与区别
+
+### 1. 关系
+- **Skills 是“能力内容”，MCP 是“传输通道”**。
+- Skill 可以封装成 **MCP Server**：把 Skill 的工具/资源用 MCP 协议暴露出去 → 任何 MCP Client（Claude、Cursor 等）都能调用这个 Skill。
+
+### 2. 核心区别（一句话）
+- **MCP = 协议**：规定“怎么通信”（接口标准）。
+- **Skills = 内容/框架**：规定“能力怎么封装、怎么加载”（技能包）。
+
+### 3. 类比
+- **MCP 像 USB‑C 接口**：统一物理连接标准。
+- **Skills 像 U 盘里的文件/软件**：具体能力内容，插到任意 USB‑C 口都能用。
+
+---
+
+## 四、总结（最简记忆版）
+- **MCP**：AI 与外部世界的**统一通信协议**（Client–Server、JSON‑RPC、即插即用）。
+- **Skills**：AI 专业能力的**封装框架**（目录标准化、三级渐进加载、沙盒执行）。
+- **关系**：Skill 可打包为 MCP Server，通过 MCP 协议被任意智能体调用。
+
+要不要我给你一个最小可运行示例：用 Python 写一个 MCP Server 并封装一个简单 Skill，让你直接跑通？
+
+# MCP
+
+## LangChain / LangGraph + MCP
+
+下面我直接把 **LangChain / LangGraph + MCP（Model Context Protocol）** 的完整用法讲清楚，从概念、安装、MCP 客户端调用、在 LangGraph 中集成、一直到把 LangGraph 本身暴露成 MCP 服务，全部给你打通（2026‑05‑19，最新官方方案）。
+
+---
+
+### 一、MCP 是什么（一句话）
+
+**MCP = Model Context Protocol**，Anthropic 推出的**标准化工具/上下文协议**，让 LLM/Agent 统一调用外部工具、数据、API，不管是什么语言、什么服务，接口一致。
+
+类比：**Function Calling 是“模型的手”，MCP 是“所有手的统一接口标准”**。
+
+---
+
+### 二、LangChain / LangGraph 怎么对接 MCP？
+
+官方包：**langchain-mcp-adapters**（LangChain 官方维护）
+
+#### 1. 安装
+
+```bash
+pip install langchain-mcp-adapters langgraph langchain-openai
+```
+
+---
+
+### 三、核心用法：LangGraph 作为 MCP 客户端（调用外部 MCP 工具）
+
+#### 场景
+
+你有一个 **MCP Server**（数学工具、文件系统、浏览器、数据库…），LangGraph 智能体直接调用它的工具。
+
+#### 完整示例（多 MCP 服务器）
+
+```python
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langgraph.prebuilt import create_react_agent
+from langchain_openai import ChatOpenAI
+
+# 1. 连接多个 MCP Server
+client = MultiServerMCPClient({
+    "math": {
+        "command": "python",
+        "args": ["/path/to/math_server.py"],  # 你的 MCP Server
+        "transport": "stdio",
+    },
+    "weather": {
+        "command": "python",
+        "args": ["/path/to/weather_server.py"],
+        "transport": "stdio",
+    }
+})
+
+# 2. 加载所有 MCP 工具
+tools = client.get_tools()
+
+# 3. 创建 LangGraph ReAct 智能体
+llm = ChatOpenAI(model="gpt-4o")
+agent = create_react_agent(llm, tools=tools)
+
+# 4. 调用 MCP 工具
+result = agent.invoke({
+    "messages": [{"role": "user", "content": "计算 (3+5)*12 并查询北京天气"}]
+})
+
+print(result["messages"][-1].content)
+```
+
+关键点：
+- **MultiServerMCPClient**：一键管理多个 MCP 服务
+- **transport**：支持 `stdio`（本地子进程）、`http`（远程服务）
+- **get_tools()**：自动把 MCP 工具转成 LangChain `Tool`，直接进 LangGraph
+
+---
+
+### 四、在 LangGraph 原生 StateGraph 中使用 MCP
+
+不依赖 `create_react_agent`，自己写节点：
+```python
+from langgraph.graph import StateGraph, START, END
+from typing import TypedDict
+from langchain_mcp_adapters.client import MultiServerMCPClient
+
+class State(TypedDict):
+    input: str
+    output: str
+
+# 1. 连接 MCP
+client = MultiServerMCPClient({
+    "my_mcp": {"command": "python", "args": ["./my_server.py"], "transport": "stdio"}
+})
+tools = client.get_tools()
+
+# 2. 定义节点
+def call_mcp_tool(state: State):
+    tool = tools[0]
+    res = tool.invoke(state["input"])
+    return {"output": res}
+
+# 3. 构建图
+graph = StateGraph(State)
+graph.add_node("mcp_node", call_mcp_tool)
+graph.add_edge(START, "mcp_node")
+graph.add_edge("mcp_node", END)
+
+app = graph.compile()
+
+# 4. 运行
+print(app.invoke({"input": "你的参数"}))
+```
+
+---
+
+### 五、反向：把 LangGraph 暴露成 MCP 服务（被别人调用）
+
+#### 场景
+
+你的 LangGraph 智能体，对外以 **MCP Endpoint** 提供服务，任何 MCP 客户端都能调用它。
+
+#### 1. 配置 langgraph.json
+
+```json
+{
+  "graphs": {
+    "my_agent": {
+      "path": "./agent.py:graph",
+      "description": "我的 LangGraph 智能体"
+    }
+  },
+  "env": ".env"
+}
+```
+
+#### 2. 启动 Agent Server（内置 MCP 端点）
+
+```bash
+langgraph serve --config langgraph.json
+```
+默认 MCP 地址：**http://localhost:8000/mcp**
+
+#### 3. 其他 MCP 客户端调用你的 LangGraph
+
+```python
+from langchain_mcp_adapters.client import MultiServerMCPClient
+
+client = MultiServerMCPClient({
+    "my_langgraph": {
+        "url": "http://localhost:8000/mcp",
+        "transport": "http"
+    }
+})
+
+tools = client.get_tools()
+# 直接调用你的 LangGraph 智能体
+```
+
+---
+
+### 六、MCP 支持的能力（LangChain 适配器全支持）
+
+- ✅ **工具调用（Tool）**：最常用
+- ✅ **资源加载（Resource）**：文件、数据库、知识库
+- ✅ **提示词模板（Prompt）**：MCP 服务端托管 Prompt
+- ✅ **多传输协议**：`stdio`、`http`、`websocket`
+
+---
+
+### 七、一句话总结（必背）
+
+- **LangChain**：用 **langchain-mcp-adapters** 把 MCP 工具转成 LangChain Tool
+- **LangGraph**：直接用 MCP 工具做节点 / ReAct 智能体
+- **暴露 LangGraph 为 MCP**：用 **langgraph serve** 启动内置 MCP 端点
+
+---
+
+如果你愿意，我可以给你：
+- 一个**可直接运行的 MCP Server 最小示例**（Python）
+- 一个**LangGraph + MCP 完整项目结构**
+
+我给你一套**最完整、可直接运行、从零到一**的 **LangChain + MCP 完整流程**，不跳步、不缺依赖，你复制就能跑。
+
+## LangChain 使用 MCP 完整流程
+
+### 整体流程（4 步）
+
+1. **写一个 MCP 服务端（提供工具）**
+2. **LangChain 连接 MCP 客户端**
+3. **把 MCP 工具转成 LangChain 工具**
+4. **LLM + 工具调用（Chain / Agent）**
+
+---
+
+### 第一步：安装依赖
+
+```bash
+pip install langchain langchain-openai mcp langchain-mcp-adapters
+```
+
+---
+
+### 第二步：写一个 **MCP 服务端**（必须先有）
+
+新建文件：`mcp_math_server.py`
+```python
+# mcp_math_server.py —— MCP 服务端（提供加法、乘法工具）
+from mcp import Tool
+from mcp.server import FastMCP
+
+# 创建 MCP 服务
+mcp = FastMCP("数学计算器")
+
+# 定义 MCP 工具：加法
+@mcp.tool()
+def add(a: float, b: float) -> float:
+    """两个数相加"""
+    return a + b
+
+# 定义 MCP 工具：乘法
+@mcp.tool()
+def multiply(a: float, b: float) -> float:
+    """两个数相乘"""
+    return a * b
+
+# 启动服务
+if __name__ == "__main__":
+    mcp.run()
+```
+
+---
+
+### 第三步：LangChain 连接 MCP（客户端）
+
+新建文件：`langchain_mcp_demo.py`
+```python
+# 1. 导入包
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_openai import ChatOpenAI
+from langchain.agents import create_openai_tools_agent, AgentExecutor
+from langchain_core.prompts import ChatPromptTemplate
+
+# 2. 连接 MCP 服务端
+mcp_client = MultiServerMCPClient(
+    {
+        "math": {
+            "command": "python",  # 用 Python 运行服务
+            "args": ["mcp_math_server.py"],  # 你的 MCP 服务文件
+            "transport": "stdio"  # 本地通信
+        }
+    }
+)
+
+# 3. 获取 MCP 工具 → 自动转为 LangChain 工具
+tools = mcp_client.get_tools()
+
+# 4. 初始化 LLM
+llm = ChatOpenAI(model="gpt-4o", temperature=0)
+
+# 5. 创建 Agent（LLM + MCP 工具）
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "你是一个工具助手"),
+    ("user", "{input}"),
+    ("assistant", "{agent_scratchpad}")
+])
+
+agent = create_openai_tools_agent(llm, tools, prompt)
+agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+
+# 6. 运行：让 LLM 调用 MCP 工具
+result = agent_executor.invoke({
+    "input": "3 加 5 等于多少？再乘以 10"
+})
+
+print("\n最终结果：", result["output"])
+```
+
+---
+
+### 第四步：运行
+
+```bash
+python langchain_mcp_demo.py
+```
+
+#### 你会看到：
+
+- LLM **自动调用 MCP 的 add 工具**
+- 再**自动调用 multiply 工具**
+- 最后给出答案：`80`
+
+---
+
+### 完整流程原理图（一句话看懂）
+
+```
+MCP 服务端（提供工具）
+        ↓（标准协议）
+LangChain MCP 客户端（转接）
+        ↓（转为 LangChain Tool）
+LLM Agent（自动调用）
+```
+
+---
+
+### 最关键的 3 个知识点
+
+1. **MCP 是服务**：提供工具/资源/权限
+2. **LangChain 是客户端**：调用 MCP
+3. **适配器自动转换**：MCP Tool → LangChain Tool，**无需手写**
+
+## LangChain 调用「官方 MCP」
+
+下面直接给你 **LangChain 调用「官方 MCP」（LangChain 团队提供的公共 MCP 服务）的完整、可直接运行流程**，包括：安装、连接 LangChain 官方 MCP、加载官方工具、在 Agent 中调用、完整代码。
+
+---
+
+### 一、什么是「官方 MCP」
+
+LangChain 官方提供了**公共 MCP 服务**（无需自己部署 Server），地址：
+```
+https://docs.langchain.com/mcp
+```
+它内置了**文档检索、代码解释器、示例工具**等，直接用即可。
+
+---
+
+### 二、安装依赖（官方包）
+
+```bash
+pip install langchain langchain-openai langchain-mcp-adapters
+```
+- `langchain-mcp-adapters`：LangChain 官方 MCP 适配器
+
+在langgraph-skills文件夹中使用 langgraph 以企业级规范实现 构建和使用skills
+
+---
+
+### 三、完整代码：调用 LangChain 官方 MCP（可直接跑）
+
+#### 1. 连接官方 MCP + 加载工具
+
+```python
+# 1. 导入
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_openai import ChatOpenAI
+from langchain.agents import create_openai_tools_agent, AgentExecutor
+from langchain_core.prompts import ChatPromptTemplate
+
+# 2. 连接 LangChain 官方 MCP（HTTP 远程）
+client = MultiServerMCPClient({
+    "langchain-docs": {
+        "transport": "http",
+        "url": "https://docs.langchain.com/mcp"  # 官方 MCP 地址
+    }
+})
+
+# 3. 加载官方 MCP 提供的所有工具（自动转 LangChain Tool）
+tools = client.get_tools()
+print("✅ 官方 MCP 工具列表：", [t.name for t in tools])
+```
+
+#### 2. 创建 Agent + 调用官方工具
+
+```python
+# 4. 初始化 LLM
+llm = ChatOpenAI(model="gpt-4o", temperature=0)
+
+# 5. 构建 Prompt
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "你可以使用 LangChain 官方工具回答问题"),
+    ("user", "{input}"),
+    ("assistant", "{agent_scratchpad}")
+])
+
+# 6. 创建 Agent（LLM + 官方 MCP 工具）
+agent = create_openai_tools_agent(llm, tools, prompt)
+agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+
+# 7. 调用官方 MCP 工具（例如查 LangChain 文档）
+result = agent_executor.invoke({
+    "input": "LangChain 中如何使用 MCP？请用官方文档回答"
+})
+
+print("\n🎯 最终结果：", result["output"])
+```
+
+---
+
+### 四、关键细节（官方 MCP 专属）
+
+#### 1. 官方 MCP 地址（固定）
+
+```
+https://docs.langchain.com/mcp
+```
+- 类型：**HTTP 远程 MCP**
+- 无需本地启动任何 Server
+- 由 LangChain 官方维护
+
+#### 2. 官方 MCP 提供的工具（常用）
+
+- `langchain_docs_search`：LangChain 文档检索
+- `code_interpreter`：代码执行
+- `example_tool`：示例工具（测试用）
+
+#### 3. 传输协议
+
+- 官方 MCP 用 **transport="http"**
+- 本地自定义 MCP 用 **transport="stdio"**
+
+---
+
+### 五、常见错误解决
+
+#### 1. 连接超时
+
+- 检查网络（官方 MCP 需外网）
+- 换用 `streamable_http`：
+```python
+"transport": "streamable_http"
+```
+
+#### 2. 工具为空
+
+- 确认 `url` 拼写正确（`https://docs.langchain.com/mcp`）
+- 更新 `langchain-mcp-adapters`：
+```bash
+pip install --upgrade langchain-mcp-adapters
+```
+
+---
+
+### 六、一句话总结（必背）
+
+**LangChain 调用官方 MCP = 用 MultiServerMCPClient 连接 https://docs.langchain.com/mcp → get_tools() → 直接进 Agent 使用**
+
+---
+
+要不要我把上面代码整理成一个**独立可直接运行的 .py 文件**，并附上 `.env` 配置模板，你直接复制就能跑？
+
+## **LangGraph + MCP 完整流程**。
+
+我给你一套**最完整、可直接运行、从零到一**的 **LangGraph + MCP 完整流程**。
+包含：**本地 MCP 服务端 → LangGraph 调用 MCP → 智能体自动执行工具**，全程复制可跑。
+
+---
+
+### 完整流程（4 步）
+
+1. 安装依赖
+2. 写一个 **MCP 服务端**（提供工具）
+3. 写 **LangGraph 代码**（连接 MCP + 构建智能体）
+4. 运行 & 看效果
+
+---
+
+### 1. 安装依赖
+
+```bash
+pip install langchain langgraph langchain-openai mcp langchain-mcp-adapters
+```
+
+---
+
+### 2. 写 MCP 服务端（提供工具）
+
+新建文件：`mcp_server.py`
+```python
+# mcp_server.py
+from mcp import Tool
+from mcp.server import FastMCP
+
+# 创建 MCP 服务
+mcp = FastMCP("计算器服务")
+
+# 加法工具
+@mcp.tool()
+def add(a: float, b: float) -> float:
+    """两个数相加"""
+    return a + b
+
+# 乘法工具
+@mcp.tool()
+def multiply(a: float, b: float) -> float:
+    """两个数相乘"""
+    return a * b
+
+# 启动服务
+if __name__ == "__main__":
+    mcp.run()
+```
+
+---
+
+### 3. 写 LangGraph 调用 MCP（核心代码）
+
+新建文件：`langgraph_mcp.py`
+```python
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_openai import ChatOpenAI
+from langgraph.prebuilt import create_react_agent
+
+# ======================
+# 1. 连接 MCP 服务
+# ======================
+mcp_client = MultiServerMCPClient(
+    {
+        "math": {
+            "command": "python",
+            "args": ["mcp_server.py"],  # 启动上面的 MCP 服务
+            "transport": "stdio"
+        }
+    }
+)
+
+# 获取 MCP 工具（自动转为 LangChain 工具）
+tools = mcp_client.get_tools()
+
+# ======================
+# 2. 初始化 LLM
+# ======================
+llm = ChatOpenAI(model="gpt-4o", temperature=0)
+
+# ======================
+# 3. 创建 LangGraph 智能体
+# ======================
+agent = create_react_agent(
+    model=llm,
+    tools=tools
+)
+
+# ======================
+# 4. 运行：让智能体自动调用 MCP 工具
+# ======================
+if __name__ == "__main__":
+    result = agent.invoke({
+        "messages": [
+            {"role": "user", "content": "3 + 5 等于多少？再乘以 10"}
+        ]
+    })
+
+    print("\n✅ 最终回答：")
+    print(result["messages"][-1].content)
+```
+
+---
+
+### 4. 运行
+
+```bash
+python langgraph_mcp.py
+```
+
+#### 你会看到：
+
+- LangGraph 自动启动 MCP 服务
+- 自动调用 **add** 工具
+- 自动调用 **multiply** 工具
+- 最终输出：**80**
+
+---
+
+### 完整流程原理图（最清晰）
+
+```
+MCP 服务端（提供工具）
+        ↓
+LangChain MCP 适配器（自动转换）
+        ↓
+LangGraph 智能体（自动决策、自动调用）
+```
+
+---
+
+### 关键知识点（必懂）
+
+1. **MCP 是工具提供方**
+2. **LangGraph 是决策方**（决定什么时候调用什么工具）
+3. **适配器自动转换**：MCP Tool → LangGraph Tool，**无需手写**
+
+## MultiServerMCPClient 
+
+### 一、核心定位
+
+**MultiServerMCPClient** = **多服务端 MCP 协议统一客户端**
+全称：**Multi Server Model Context Protocol Client**
+依托 **MCP(Model Context Protocol)** 标准，**同时连接多个 MCP Server**，统一聚合所有服务端的工具、资源、提示词，供给 LangGraph/LangChain Agent 一键调用。
+
+#### 核心作用
+
+1. 一单连接**多个独立 MCP 服务**（本地进程、远程TCP、SSE、STDIO）
+2. 自动聚合所有服务端暴露的 `tools` / `resources` / `prompts`
+3. 统一格式转为 LangChain 标准工具，直接接入智能体
+4. 统一生命周期管理：批量连接、批量关闭、重连、心跳
+
+---
+
+### 二、MCP 基础前置
+
+- **MCP**：大模型上下文通信标准协议，用于**AI 代理 ↔ 外部服务**互通
+- **MCP Server**：提供能力服务（文件操作、数据库、接口、业务技能）
+- **MCP Client**：连接服务端，调用能力
+- **MultiServerMCPClient**：**批量多客户端聚合器**
+
+### 三、核心架构
+
+```
+Agent(LangGraph)
+     ↓
+MultiServerMCPClient 聚合层
+├─ 连接 MCP Server 1（业务技能服务）
+├─ 连接 MCP Server 2（数据库服务）
+├─ 连接 MCP Server 3（知识库服务）
+└─ 连接 N 个自定义 MCP 服务
+```
+
+### 四、核心属性 & 关键参数
+
+##### 1. 初始化参数
+
+```python
+class MultiServerMCPClient:
+    def __init__(self):
+        # 存储所有服务端连接会话
+        self._server_connections: dict[str, MCPClientSession]
+        # 全局聚合工具缓存
+        self._all_tools: list[BaseTool]
+```
+
+##### 2. 连接方式（支持全场景）
+
+1. **STDIO 子进程连接**（本地最常用）
+    启动本地 Python/Node 子进程作为 MCP Server
+2. **TCP 网络连接**（远程独立服务）
+3. **SSE 流式连接**（Web 长连接服务）
+
+##### 3. 核心方法
+
+| 方法                     | 作用                                |
+| ------------------------ | ----------------------------------- |
+| `connect_to_server()`    | 单个服务端建立连接                  |
+| `connect_to_servers()`   | 批量批量连接多服务                  |
+| `get_tools()`            | 聚合所有服务端工具 → LangChain Tool |
+| `close()`                | 批量关闭所有连接                    |
+| `__aenter__ / __aexit__` | 异步上下文管理器（推荐）            |
+| `get_prompts()`          | 获取所有服务端预设提示词            |
+| `get_resources()`        | 获取所有服务端上下文资源            |
+
+---
+
+### 五、和你上面 `@enterprise_skill` 完美联动
+
+##### 业务架构闭环
+
+1. 你的**企业技能函数**（`retrieve_accounts`/`transfer_funds`）
+2. 封装成 **MCP Server** 对外暴露
+3. **MultiServerMCPClient** 统一拉取所有企业技能
+4. LangGraph 智能体自动发现 + 调用 + 审批校验
+5. 实现**分布式企业级AI技能编排**
+
+##### 优势对比
+
+- 原生 `@tool`：本地单体工具，无法分布式部署
+- `enterprise_skill` 装饰器：本地注册，难跨服务
+- **MultiServerMCPClient + MCP**：
+  技能**微服务化**，拆分部署、独立扩容、权限隔离、跨语言调用
+
+---
+
+### 六、最简可运行标准代码
+
+##### 1. 安装依赖
+
+```bash
+pip install langchain-mcp-adapters mcp
+```
+
+##### 2. 多服务客户端使用示例
+
+```python
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langgraph.prebuilt import create_react_agent
+from langchain_openai import ChatOpenAI
+
+# 初始化大模型
+llm = ChatOpenAI(model="gpt-4o")
+
+# 配置多个 MCP 服务端地址/启动命令
+server_configs = {
+    # 1. 本地企业技能 MCP Server
+    "enterprise_skill_server": {
+        "command": "python",
+        "args": ["./mcp_skill_server.py"]
+    },
+    # 2. 数据库 MCP 服务
+    "db_server": {
+        "url": "http://127.0.0.1:8001/sse"
+    }
+}
+
+async def main():
+    # 多服务客户端上下文管理
+    async with MultiServerMCPClient(server_configs) as client:
+        # 聚合所有服务端工具
+        all_tools = client.get_tools()
+        print("已加载全部企业技能工具：", [t.name for t in all_tools])
+        
+        # 创建 LangGraph 智能体
+        agent = create_react_agent(llm, all_tools)
+        
+        # 调用企业技能
+        res = await agent.ainvoke({
+            "messages": [("user", "查询我的企业账户余额")]
+        })
+        print(res["messages"][-1].content)
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
+```
+
+### 七、核心底层原理
+
+1. **会话隔离**
+   每个 MCP Server 独立 Session，互不干扰，独立鉴权
+2. **协议自动适配**
+   自动将 MCP 标准工具描述 → LangChain `BaseTool`
+3. **参数自动映射**
+   MCP 入参 schema 自动转为 LLM 函数调用格式
+4. **异步高并发**
+   全异步 IO，支持大量服务端同时连接
+5. **错误熔断**
+   单服务宕机不影响其他服务调用
+
+### 八、企业级实战特性
+
+1. **统一权限拦截**
+   在 MultiServerMCPClient 层统一拦截 `requires_approval` 技能，先走人工审批
+2. **上下文透传**
+   自动注入 `user_id` 等安全上下文，和你 `InjectedContext` 对齐
+3. **技能路由**
+   客户端自动识别技能归属服务端，精准转发调用
+4. **负载拆分**
+   转账、查询、知识库拆分不同 MCP 服务，解耦业务
+
+### 九、和你现有技术栈整合关系
+
+```
+你的配置 Settings(.env)
+      ↓
+LLM(Qwen/OpenAI/Ollama)
+      ↓
+LangGraph 编排
+      ↓
+MultiServerMCPClient 多服务聚合
+      ↓
+各个 MCP Server
+      ↓
+@enterprise_skill 企业技能函数
+```
+
+### 十、常见使用场景
+
+1. 拆分**业务技能、数据库、文件、运维**为独立MCP服务
+2. 多团队独立开发技能服务，客户端统一接入
+3. 跨语言技能调用（Python技能 + Java MCP服务互通）
+4. 大型企业AI中台统一技能网关
+5. LangGraph 分布式智能体集群
+
+---
+
+### 一句话总结
+
+**MultiServerMCPClient 就是 LangGraph 生态里的「多技能服务网关」，统一收拢所有分布式 MCP 能力，让智能体像调用本地函数一样，无缝调用全网企业级 @enterprise_skill 技能。**
+
+## `@mcp.tool()` 完整详解
+
+### 一、归属与作用
+
+**`@mcp.tool()`** 是 **MCP（Model Context Protocol）** 官方 Python SDK 提供的**装饰器**
+- 包：`from mcp.server import tool`
+- 用途：**把普通 Python 函数快速注册成 MCP 服务端可对外暴露的标准工具**
+- 等价对标：
+  - LangChain：`@tool`
+  - 你项目自研：`@enterprise_skill`
+  - Spring AI：`@EnterpriseSkill`
+
+---
+
+### 二、基础语法
+
+```python
+from mcp.server import Server
+from mcp.types import TextContent
+from mcp import tool
+
+# 初始化MCP服务实例
+mcp_server = Server("enterprise-skill-mcp-server")
+
+# 核心注解
+@mcp_server.tool()
+async def get_user_balance(user_id: str) -> str:
+    """
+    查询用户账户余额
+    :param user_id: 企业用户唯一标识
+    """
+    return f"用户{user_id}当前账户余额：12450.00 USD"
+```
+
+#### 注解参数
+
+```python
+# 自定义工具名、描述（优先覆盖函数注释）
+@mcp_server.tool(
+    name="query_account_balance",
+    description="查询企业用户储蓄/活期账户余额信息"
+)
+```
+- `name`：对外暴露的工具名，客户端调用靠这个匹配
+- `description`：给大模型看的能力说明，决定LLM何时调用
+
+---
+
+### 三、完整标准 MCP Server 模板（搭配你企业技能）
+
+```python
+# mcp_skill_server.py
+import json
+from mcp.server import Server
+from mcp.types import TextContent, Tool
+from skills.biz_skill import retrieve_accounts, transfer_funds
+
+# 初始化MCP服务
+server = Server("corp-finance-skill-server")
+
+# 1. 封装企业查询技能为MCP Tool
+@server.tool()
+async def retrieve_corp_account(account_type: str = "all") -> str:
+    """
+    企业账户信息查询
+    account_type: all/savings/checking
+    """
+    # 内部调用你写好的 enterprise_skill 函数
+    result = retrieve_accounts(user_id="user_corp_99", account_type=account_type)
+    return result
+
+# 2. 封装转账敏感技能
+@server.tool()
+async def corp_transfer(amount: float, recipient_account: str) -> str:
+    """
+    企业对公转账
+    amount: 转账金额
+    recipient_account: 收款账户号
+    """
+    return transfer_funds(user_id="user_corp_99", amount=amount, recipient_account=recipient_account)
+
+# 启动STDIO模式MCP服务（供MultiServerMCPClient本地调用）
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(server.run_stdio())
+```
+
+---
+
+### 四、核心特性
+
+1. **自动生成 JSON Schema 参数结构**
+   读取函数入参类型、文档字符串，自动生成符合MCP协议的工具入参结构，**无需手动写schema**。
+
+2. **天然适配 `MultiServerMCPClient`**
+   服务端用 `@mcp.tool()` 注册 → 客户端 `MultiServerMCPClient` 一键拉取所有工具，自动转为 LangChain/LangGraph 可用工具。
+
+3. **支持同步/异步函数**
+   - 推荐写 `async def` 适配MCP异步架构
+   - 普通同步函数也可直接用
+
+4. **区分业务层级**
+   - 底层：`@enterprise_skill` 做**业务逻辑+审批+安全注入**
+   - 上层：`@mcp.tool()` 做**协议暴露、跨进程分发**
+
+---
+
+### 五、三层架构串联（最标准流程）
+
+```
+1. 业务层：@enterprise_skill 写核心业务（校验/审批/上下文注入）
+2. 协议层：@mcp.tool() 包装成标准MCP工具对外发布
+3. 调用层：MultiServerMCPClient 多服务聚合 → LangGraph Agent 调用
+```
+
+---
+
+### 六、和其他装饰器对比
+
+| 装饰器              | 所属体系   | 用途                         | 部署方式        |
+| ------------------- | ---------- | ---------------------------- | --------------- |
+| `@enterprise_skill` | 项目自研   | 企业业务能力、审批、安全注入 | 本地函数注册    |
+| `@mcp.tool()`       | MCP官方SDK | 转为标准协议工具、对外暴露   | 独立MCP服务进程 |
+| `@langchain.tool`   | LangChain  | 本地单体工具                 | 同进程调用      |
+
+---
+
+### 七、客户端调用对应写法
+
+```python
+from langchain_mcp_adapters.client import MultiServerMCPClient
+
+async def run():
+    async with MultiServerMCPClient({
+        "finance_server": {"command": "python", "args": ["mcp_skill_server.py"]}
+    }) as client:
+        tools = client.get_tools()
+        # 直接调用 @mcp.tool 注册的所有技能
+```
+
+---
+
+### 八、常用避坑点
+
+1. `@mcp.tool()` **只能装饰函数**，不能直接挂载类方法
+2. 入参尽量用基础类型 `str/float/int`，复杂结构用JSON字符串传递
+3. 敏感操作（转账）依旧在内部调用带 `requires_approval` 的企业技能，MCP只做转发不做业务管控
+4. 上下文 `user_id` 依旧用 `InjectedContext` 注入，**不在MCP入参里明文传递**
+
+# Skills
+
+## LangChain 使用 **Skills** 完整流程
+
+我给你**最标准、最通用、官方推荐**的 **LangChain Skills 完整使用流程**，包含：
+1. 什么是 Skills
+2. 安装依赖
+3. 定义 Skill
+4. 加载/使用 Skill
+5. 让 LLM 自动调用 Skill
+6. 高级：多 Skills 管理
+
+全程**无坑、可复制运行**。
+
+---
+
+### 一、先搞懂：LangChain 中的 Skills 是什么？
+
+**Skill = 封装好的「独立功能模块」**（工具 + 逻辑 + 提示词）
+- 一个 Skill 就是**一个可复用的能力**（比如：搜索Skill、翻译Skill、计算Skill、发邮件Skill）
+- LangChain 中，**Skill 本质就是 Structured Tool / Function**
+- 官方理念：**把复杂功能拆成一个个 Skill，让 Agent 自由调用**
+
+类比：
+- Skill = 手机里的 App
+- LLM Agent = 手机系统
+- 需要什么功能，就调用什么 Skill
+
+---
+
+### 二、完整流程（5步）
+
+#### 1. 安装依赖
+
+```bash
+pip install langchain langchain-openai langchain-community
+```
+
+#### 2. 定义 2 个标准 Skill（示例：计算 + 翻译）
+
+新建文件：`skills.py`
+```python
+# 定义 Skill：每个 Skill 就是一个带参数、带描述的工具
+from langchain.tools import tool
+
+# ==================== Skill 1：加法计算 ====================
+@tool
+def add_skill(a: float, b: float) -> float:
+    """
+    加法计算 Skill
+    用于：两个数字相加
+    参数：
+        a: 第一个数字
+        b: 第二个数字
+    """
+    return a + b
+
+# ==================== Skill 2：乘法计算 ====================
+@tool
+def multiply_skill(a: float, b: float) -> float:
+    """
+    乘法计算 Skill
+    用于：两个数字相乘
+    参数：
+        a: 第一个数字
+        b: 第二个数字
+    """
+    return a * b
+
+# ==================== Skill 3：简易翻译 ====================
+@tool
+def translate_skill(text: str) -> str:
+    """
+    翻译 Skill
+    用于：把英文翻译成中文
+    参数：
+        text: 要翻译的英文文本
+    """
+    # 真实场景可对接翻译 API
+    trans_dict = {"hello": "你好", "world": "世界", "thank you": "谢谢"}
+    return trans_dict.get(text.lower(), f"【{text}】的翻译")
+
+# 导出所有 Skills（核心！）
+all_skills = [add_skill, multiply_skill, translate_skill]
+```
+
+### 3. LangChain 加载 Skills
+
+新建文件：`langchain_skills.py`
+```python
+from langchain_openai import ChatOpenAI
+from langchain.agents import create_openai_tools_agent, AgentExecutor
+from langchain_core.prompts import ChatPromptTemplate
+
+# 从 skills.py 导入所有 Skill
+from skills import all_skills
+
+# ======================
+# 1. 初始化 LLM
+# ======================
+llm = ChatOpenAI(model="gpt-4o", temperature=0)
+
+# ======================
+# 2. 加载所有 Skills
+# ======================
+skills = all_skills
+print("✅ 加载的 Skills：", [s.name for s in skills])
+
+# ======================
+# 3. 创建 Agent（LLM + Skills）
+# ======================
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "你是一个智能助手，必须使用提供的 Skills 完成任务，不要自己计算"),
+    ("user", "{input}"),
+    ("assistant", "{agent_scratchpad}")
+])
+
+# 创建 Agent
+agent = create_openai_tools_agent(llm, skills, prompt)
+agent_executor = AgentExecutor(agent=agent, tools=skills, verbose=True)
+```
+
+### 4. 运行：让 LLM 自动调用 Skills
+
+```python
+# ======================
+# 4. 测试 1：计算任务（自动调用 Skills）
+# ======================
+result1 = agent_executor.invoke({
+    "input": "3 + 5 等于多少？再乘以 10"
+})
+print("\n计算结果：", result1["output"])
+
+# ======================
+# 5. 测试 2：翻译任务
+# ======================
+result2 = agent_executor.invoke({
+    "input": "翻译 hello"
+})
+print("翻译结果：", result2["output"])
+```
+
+#### 5. 直接运行
+
+```bash
+python langchain_skills.py
+```
+
+##### 运行效果
+
+- LLM **自动识别任务**
+- **自动选择对应 Skill**
+- **自动传参**
+- **自动执行**
+- 输出最终答案
+
+---
+
+### 三、高级：官方 Skills 库（现成可用）
+
+LangChain 提供**大量现成官方 Skills**（搜索、邮件、数据库、浏览器…）
+直接安装使用：
+
+#### 1. 安装官方 Skills 库
+
+```bash
+pip install langchain-experimental
+```
+
+#### 2. 使用官方 Search Skill
+
+```python
+from langchain_community.tools import DuckDuckGoSearchRun
+
+# 加载官方搜索 Skill
+search_skill = DuckDuckGoSearchRun()
+official_skills = [search_skill]
+
+# 直接放入 Agent 使用
+# （后续代码和上面完全一样）
+```
+
+---
+
+### 四、Skills 核心规则（必看）
+
+1. **一个 Skill = 一个独立功能**
+2. **必须写清晰描述**：LLM 靠描述判断调用哪个 Skill
+3. **必须定义参数**：让 LLM 自动传参
+4. **可集中管理**：统一导出、统一加载
+5. **Agent 自动调用**：无需手动触发
+
+---
+
+### 五、完整流程总结（一句话）
+
+1. 把功能封装成 **@tool Skill**
+2. 统一加载到 LangChain
+3. 交给 **Agent**
+4. LLM 自动决策、自动调用 Skills
+
+## LangChain 里调用「官方 Skills」（langchain‑skills / deepagents 体系）
+
+下面我直接把 **LangChain 里调用「官方 Skills」（langchain‑skills / deepagents 体系）的完整、可运行流程**讲清楚，并且和你之前问的「当作工具用」做一个明确区分。
+
+---
+
+### 一、先澄清：LangChain 的「官方 Skills」≠ 普通 Tool
+
+你之前用的：
+```python
+@tool
+def calc_add(...): ...
+```
+这是 **LangChain Tool（工具）**。
+
+LangChain 2026 推出的 **官方 Skills（deepagents / langchain‑skills）** 是另一套东西：
+- 是 **可复用、可共享、渐进式加载的能力包**
+- 每个 Skill 是一个文件夹：`SKILL.md` + 脚本 + 资源
+- 用于 **编程智能体 / DeepAgents**，不是普通 Tool
+- 安装：`npx skills add langchain-ai/langchain-skills`
+
+一句话：
+- **普通 Tool = 你写的函数**
+- **官方 Skills = LangChain 官方维护的能力包（代码+文档）**
+
+---
+
+### 二、安装 LangChain 官方 Skills（命令行）
+
+#### 1）安装官方 skill 仓库
+
+```bash
+# 安装全部官方 skills（本地项目）
+npx skills add langchain-ai/langchain-skills --skill '*' --yes
+
+# 全局安装（所有项目可用）
+npx skills add langchain-ai/langchain-skills --skill '*' --yes --global
+```
+会在项目下生成：
+```
+.skills/
+  langchain-skills/
+    langchain-docs/
+      SKILL.md
+    sql-assistant/
+      SKILL.md
+    ...
+```
+
+#### 2）安装依赖
+
+```bash
+pip install langchain langchain-openai deepagents
+```
+
+---
+
+### 三、LangChain 中调用官方 Skills（两种方式）
+
+#### 方式 A：DeepAgents（官方标准，推荐）
+
+`deepagents` 是 LangChain 官方给 Skill 设计的运行时。
+
+```python
+from langchain_openai import ChatOpenAI
+from deepagents import create_deep_agent
+from deepagents.backends import StoreBackend
+from langgraph.store.memory import InMemoryStore
+
+# 1. LLM
+llm = ChatOpenAI(model="gpt-4o", temperature=0)
+
+# 2. 存储（用于加载 skill 文件）
+store = InMemoryStore()
+
+# 3. 创建支持 skills 的 agent
+agent = create_deep_agent(
+    backend=lambda rt: StoreBackend(rt),
+    store=store,
+    skills=["/skills/langchain-skills/langchain-docs/"],  # 引用官方 skill
+    llm=llm
+)
+
+# 4. 调用：agent 会自动加载并使用官方 skill
+res = agent.invoke({
+    "messages": [{"role": "user", "content": "Tell me about LangGraph"}]
+})
+
+print(res["messages"][-1].content)
+```
+特点：
+- **自动渐进式加载**：需要时才读取 `SKILL.md`
+- 官方 Skill 直接当能力用，**不用转成 @tool**
+
+---
+
+#### 方式 B：把官方 Skill 转成 LangChain Tool（兼容旧代码）
+
+如果你想在普通 `create_react_agent` 里用官方 Skill：
+
+```python
+from langchain.tools import tool
+from pathlib import Path
+
+# 1. 读取官方 SKILL.md
+skill_path = Path(".skills/langchain-skills/langchain-docs/SKILL.md")
+skill_content = skill_path.read_text()
+
+# 2. 包装成 Tool
+@tool
+def langchain_docs_skill(query: str) -> str:
+    """LangChain 官方文档查询技能"""
+    return f"基于官方 Skill 回答：{query}\n{skill_content[:500]}..."
+
+# 3. 当作普通 tool 传入 ReActAgent
+from langgraph.prebuilt import create_react_agent
+from langchain_openai import ChatOpenAI
+
+llm = ChatOpenAI(model="gpt-4o")
+agent = create_react_agent(llm, tools=[langchain_docs_skill])
+
+res = agent.invoke({"messages": [("user", "What is LangGraph?")]})
+print(res["messages"][-1].content)
+```
+
+---
+
+### 四、官方 Skills 完整调用流程（最简总结）
+
+1. **安装官方 Skills（命令行）**  
+   `npx skills add langchain-ai/langchain-skills`
+2. **目录出现 .skills/langchain-skills/**
+3. **用 deepagents.create_deep_agent 加载 skills 路径**
+4. **直接 invoke，agent 自动匹配并调用官方 Skill**
+
+---
+
+### 五、和你之前问题的关系
+
+- 你之前写的 `@tool` → **是 Tool，不是官方 Skill**
+- 官方 Skill → **可以被当作 Tool 用，但原生是 deepagents 能力包**
+- 在 LangGraph：
+  - **自定义 Skill（@tool）= 直接进 tools 列表**
+  - **官方 Skill = 用 deepagents 加载，或手动包装成 tool**
+
+---
+
+如果你愿意，我可以给你一份：
+- **可直接跑的「LangGraph + 官方 Skills」完整代码（含目录结构）**
+要不要我直接给你？
+
+## LangGraph 使用 Skills 完整流程
+
+### 一、核心概念
+
+**Skills** = 可复用业务能力工具，LangGraph 中直接把 Skill 当作**节点工具**，由图流程/ReAct 智能体自动调度调用。
+流程：定义Skill → 统一聚合Skill → 注入LangGraph → 图流程自动调用
+
+### 二、环境安装
+
+```bash
+pip install langgraph langchain langchain-openai
+```
+
+### 三、第一步：统一封装自定义 Skills
+
+新建 `skills/skill_pool.py` 统一管理所有技能
+```python
+from langchain.tools import tool
+
+# 数学计算技能
+@tool
+def calc_add(a: float, b: float) -> str:
+    """
+    数字加法运算
+    参数：
+        a: 第一个数值
+        b: 第二个数值
+    """
+    return f"加法结果：{a + b}"
+
+@tool
+def calc_mul(a: float, b: float) -> str:
+    """
+    数字乘法运算
+    参数：
+        a: 第一个数值
+        b: 第二个数值
+    """
+    return f"乘法结果：{a * b}"
+
+# 文本处理技能
+@tool
+def text_upper(content: str) -> str:
+    """
+    英文文本转大写
+    参数：
+        content: 输入文本
+    """
+    return content.upper()
+
+# 聚合所有技能，统一导出
+ALL_SKILLS = [calc_add, calc_mul, text_upper]
+```
+
+### 四、第二步：LangGraph 集成 Skills 两种用法
+
+#### 用法1：最简 ReAct 智能体（自动调用Skill，最常用）
+
+```python
+from langchain_openai import ChatOpenAI
+from langgraph.prebuilt import create_react_agent
+from skills.skill_pool import ALL_SKILLS
+
+# 1. 初始化大模型
+llm = ChatOpenAI(model="gpt-4o", temperature=0)
+
+# 2. 绑定所有Skills构建LangGraph智能体
+graph_agent = create_react_agent(llm, tools=ALL_SKILLS)
+
+# 3. 调用执行，自动匹配技能
+if __name__ == "__main__":
+    res = graph_agent.invoke({
+        "messages": [("user", "计算6加9，结果再乘以2，最后把结果英文描述转大写")]
+    })
+    print(res["messages"][-1].content)
+```
+
+#### 用法2：原生 StateGraph 手动编排 Skill 节点
+
+自主控制流程走向，适合复杂业务编排
+```python
+from typing import TypedDict, Annotated
+from langgraph.graph import StateGraph, START, END
+from langchain_core.messages import BaseMessage
+from skills.skill_pool import calc_add, calc_mul
+
+# 定义状态结构体
+class GraphState(TypedDict):
+    messages: Annotated[list[BaseMessage], "对话消息"]
+    num1: float
+    num2: float
+    final_result: str
+
+# 自定义节点：调用加法Skill
+def add_skill_node(state: GraphState) -> GraphState:
+    res = calc_add.invoke({"a": state["num1"], "b": state["num2"]})
+    state["final_result"] = res
+    return state
+
+# 自定义节点：调用乘法Skill
+def mul_skill_node(state: GraphState) -> GraphState:
+    res = calc_mul.invoke({"a": state["num1"], "b": state["num2"]})
+    state["final_result"] = res
+    return state
+
+# 构建流程图
+builder = StateGraph(GraphState)
+builder.add_node("add_node", add_skill_node)
+builder.add_node("mul_node", mul_skill_node)
+
+# 流程连线
+builder.add_edge(START, "add_node")
+builder.add_edge("add_node", "mul_node")
+builder.add_edge("mul_node", END)
+
+# 编译图
+graph = builder.compile()
+
+# 手动执行调用Skill
+if __name__ == "__main__":
+    run_res = graph.invoke({"num1": 10, "num2": 5})
+    print(run_res["final_result"])
+```
+
+### 五、第三步：加载第三方/官方 Skills
+
+直接接入社区现成技能，无需手写
+```python
+from langchain_community.tools import DuckDuckGoSearchRun
+# 接入全网搜索技能
+search_skill = DuckDuckGoSearchRun()
+# 合并自定义+官方技能
+merge_skills = ALL_SKILLS + [search_skill]
+# 直接传入LangGraph使用
+agent = create_react_agent(llm, tools=merge_skills)
+```
+
+### 六、第四步：Skill 调用核心规范
+
+1. **描述必须清晰**：LLM依靠函数注释判断调用哪个Skill
+2. **参数类型明确**：严格标注int/float/str，避免传参错误
+3. **技能单一职责**：一个Skill只做一件事，方便调度
+4. **统一入口管理**：全部技能放入统一数组，便于维护扩容
+5. **LangGraph自动路由**：ReAct模式无需手动判断，模型自主选Skill
+
+### 七、完整执行流程总结
+
+1. 编写独立业务Skill工具 → 聚合统一管理
+2. 初始化LLM大模型
+3. 将Skill集合传入LangGraph智能体/自定义图节点
+4. 输入用户指令，框架自动匹配、调用对应Skill
+5. 汇总结果输出最终应答
+
+### 八、拓展搭配
+
+1. **Skills + MCP**：把MCP远程工具转为Skill，统一纳入LangGraph调度
+2. **Skills + 记忆**：给Graph增加记忆，技能调用支持上下文连贯
+3. **技能权限管控**：在节点中增加判断，限制特定场景可用Skill
+
+需要我给你整理**企业级Skill分层目录结构**，或者**Skill+MCP融合一体代码**吗？
+
+# langchain中的Function Call、MCP、Skills
+
+在现代 AI Agent 体系里，`Function Call`、`MCP`、`Skills` 经常一起出现，但它们解决的问题层级不同。
+
+你可以把它们理解为：
+
+- **Function Call**：LLM 调用“单个工具”
+- **Skills**：把多个工具和流程封装成“能力”
+- **MCP**：让 Agent 能标准化连接“外部工具生态”
+
+它们是逐层抽象的关系。
+
+------
+
+## 一、Function Call（函数调用）
+
+这是最底层、最核心的能力。
+
+本质：
+
+> 让大模型输出结构化参数，然后由程序真正执行函数。
+
+例如：
+
+用户说：
+
+> “帮我查询北京天气”
+
+LLM 不直接回答，而是输出：
+
+```json
+{
+  "tool": "get_weather",
+  "args": {
+    "city": "北京"
+  }
+}
+```
+
+程序接收到后：
+
+```python
+get_weather(city="北京")
+```
+
+然后把结果再喂给模型。
+
+------
+
+## LangChain 中的 Function Call
+
+在 LangChain 中：
+
+```python
+from langchain.tools import tool
+
+@tool
+def get_weather(city: str):
+    return f"{city}晴天"
+```
+
+绑定：
+
+```python
+llm.bind_tools([get_weather])
+```
+
+Agent 自动决定什么时候调用。
+
+------
+
+### Function Call 的特点
+
+| 特点       | 说明                      |
+| ---------- | ------------------------- |
+| 粒度       | 单函数                    |
+| 本质       | Tool Calling              |
+| 执行者     | 程序                      |
+| LLM作用    | 生成参数                  |
+| 是否有状态 | 通常无                    |
+| 是否跨进程 | 不一定                    |
+| 是否标准化 | OpenAI/Anthropic 各家不同 |
+
+------
+
+## 二、Skills（技能）
+
+Skills 是：
+
+> 一组工具 + Prompt + 工作流 的封装。
+
+它比 function call 更高层。
+
+------
+
+### 举例
+
+比如：
+
+### “生成 PPT” Skill
+
+它内部可能：
+
+1. 调用搜索工具
+2. 调用总结工具
+3. 调用图片生成
+4. 调用 PPT 导出
+
+对 Agent 来说：
+
+```python
+ppt_skill(topic="AI")
+```
+
+但内部其实是复杂工作流。
+
+------
+
+### Skills 的本质
+
+Skills 更像：
+
+- 子 Agent
+- 工作流模板
+- 能力模块
+- Capability
+
+它强调：
+
+> “完成某种任务的能力”
+
+而不是：
+
+> “调用某个函数”
+
+------
+
+### LangChain 中的 Skills
+
+严格来说：
+
+LangChain 官方并没有特别强定义 “Skills”。
+
+但以下都属于 skill 思想：
+
+| LangChain组件 | 类似 Skill |
+| ------------- | ---------- |
+| Chain         | 工作流     |
+| Runnable      | 能力模块   |
+| AgentExecutor | 复杂能力   |
+| LangGraph节点 | 子能力     |
+| Toolkits      | 工具集     |
+| Multi-agent   | 专业技能体 |
+
+------
+
+例如：
+
+```python
+research_skill = RunnableSequence(
+    search_tool,
+    summarize_chain,
+    report_chain
+)
+```
+
+这是一个 skill。
+
+------
+
+### Skills 的特点
+
+| 特点             | 说明     |
+| ---------------- | -------- |
+| 粒度             | 高层能力 |
+| 本质             | Workflow |
+| 可组合           | 强       |
+| 通常有状态       | 是       |
+| 是否包含多个tool | 是       |
+| 是否有推理       | 往往有   |
+| 是否可独立运行   | 通常可以 |
+
+------
+
+## 三、MCP（Model Context Protocol）
+
+MCP 是现在最容易混淆的。
+
+MCP 不是工具。
+
+也不是 skill。
+
+它是：
+
+> AI 与外部系统通信的标准协议。
+
+由 Anthropic 提出。
+
+类似：
+
+- HTTP 是 Web 标准
+- JDBC 是数据库标准
+- MCP 是 AI Tool 标准
+
+------
+
+### MCP 解决什么问题？
+
+以前：
+
+每个 AI 框架：
+
+- tool schema 不同
+- 调用方式不同
+- 鉴权不同
+- transport 不同
+
+导致：
+
+```text
+OpenAI Tool
+Claude Tool
+LangChain Tool
+AutoGen Tool
+CrewAI Tool
+```
+
+全部不兼容。
+
+------
+
+MCP 希望统一：
+
+```text
+Agent <--MCP--> Tool Server
+```
+
+------
+
+### MCP 架构
+
+核心：
+
+```text
+LLM Client
+   ↓
+MCP Client
+   ↓
+MCP Server
+   ↓
+真实工具
+```
+
+------
+
+### MCP Server 示例
+
+例如：
+
+```text
+filesystem-mcp
+github-mcp
+postgres-mcp
+slack-mcp
+```
+
+Agent 不需要知道具体实现。
+
+只要会 MCP 协议即可。
+
+------
+
+### MCP 与 Function Call 的关系
+
+这是关键。
+
+很多人误以为：
+
+> MCP 替代 Function Call
+
+实际上：
+
+❌ 不是
+
+真正关系：
+
+```text
+Function Call = 调用机制
+MCP = 工具通信标准
+```
+
+MCP 内部依然可能：
+
+- tool call
+- JSON schema
+- 参数生成
+
+------
+
+### 一个完整流程
+
+例如：
+
+用户：
+
+> “读取 README.md 并总结”
+
+------
+
+#### 传统方式
+
+LangChain：
+
+```python
+@tool
+def read_file(path):
+    ...
+```
+
+直接本地注册。
+
+------
+
+#### MCP 方式
+
+Agent：
+
+```text
+调用 filesystem MCP server
+```
+
+MCP server 暴露：
+
+```json
+{
+  "tool": "read_file",
+  "schema": ...
+}
+```
+
+LLM 生成参数：
+
+```json
+{
+  "path": "README.md"
+}
+```
+
+然后 MCP server 执行。
+
+------
+
+## 四、三者关系（核心）
+
+最重要的一张图：
+
+```text
+┌─────────────────────┐
+│      Skills         │
+│ (复杂能力/工作流)     │
+└─────────▲───────────┘
+          │
+          │调用
+          │
+┌─────────┴───────────┐
+│   Function Calling  │
+│   (工具调用机制)      │
+└─────────▲───────────┘
+          │
+          │通信
+          │
+┌─────────┴───────────┐
+│        MCP          │
+│ (标准化工具协议)      │
+└─────────────────────┘
+```
+
+------
+
+## 五、在 LangChain / LangGraph 中怎么对应？
+
+| 概念          | LangChain        | LangGraph     |
+| ------------- | ---------------- | ------------- |
+| Function Call | Tool             | ToolNode      |
+| Skills        | Chain / Runnable | 子图 SubGraph |
+| MCP           | MCP Adapter      | MCP Tool Node |
+
+------
+
+## 六、什么时候用什么？
+
+### 1. 小项目
+
+直接：
+
+```text
+Function Call
+```
+
+即可。
+
+例如：
+
+- 查天气
+- 查数据库
+- 发邮件
+
+------
+
+### 2. 多步骤 Agent
+
+使用：
+
+```text
+Skills
+```
+
+例如：
+
+- 自动写报告
+- 自动编码
+- 自动生成 PPT
+- AI 助手
+
+------
+
+### 3. 企业级 Tool 生态
+
+使用：
+
+```text
+MCP
+```
+
+例如：
+
+- IDE 插件
+- 多工具平台
+- SaaS 集成
+- 多 Agent 系统
+
+------
+
+## 七、现在行业趋势
+
+2025~2026 的趋势：
+
+```text
+Function Call → 基础能力
+Skills → Agent编排
+MCP → 工具生态标准
+```
+
+现在很多框架：
+
+- OpenAI
+- Anthropic
+- Microsoft
+- Google
+
+都在往：
+
+```text
+Agent + MCP + Workflow
+```
+
+方向演进。
+
+------
+
+## 八、一句话总结
+
+可以记成：
+
+```text
+Function Call = 调工具
+Skill = 做事情
+MCP = 接生态
+```
+
+或者：
+
+```text
+Function Call 是螺丝
+Skill 是机器
+MCP 是标准接口
+```
+
+# Langgraph中FC、Skills、MCP的区别
+
+在 LangGraph 里，这三个概念的边界会比普通 LangChain 更清晰，因为 LangGraph 本身就是：
+
+> “状态机 + 工作流 + Agent 编排框架”
+
+所以：
+
+- Function Call 更偏“节点执行”
+- Skills 更偏“子图能力”
+- MCP 更偏“外部工具协议”
+
+三者在 LangGraph 中分别位于：
+
+```text
+┌────────────────────────────┐
+│         Skills             │
+│    (子图/复杂能力)           │
+└────────────▲───────────────┘
+             │
+┌────────────┴───────────────┐
+│      Function Call         │
+│       (ToolNode)           │
+└────────────▲───────────────┘
+             │
+┌────────────┴───────────────┐
+│            MCP             │
+│     (外部工具标准协议)       │
+└────────────────────────────┘
+```
+
+------
+
+## 一、LangGraph 中的 Function Call
+
+这是最底层。
+
+本质：
+
+> Agent 节点调用某个 Tool。
+
+------
+
+### 在 LangGraph 中长什么样？
+
+例如：
+
+```python
+from langchain.tools import tool
+
+@tool
+def search_weather(city: str):
+    return f"{city}晴天"
+```
+
+然后：
+
+```python
+from langgraph.prebuilt import ToolNode
+
+tool_node = ToolNode([search_weather])
+```
+
+------
+
+### 整体流程
+
+```text
+User
+ ↓
+LLM Node
+ ↓
+生成 tool_calls
+ ↓
+ToolNode
+ ↓
+执行函数
+ ↓
+结果返回 LLM
+```
+
+------
+
+### 核心特点
+
+| 特点       | LangGraph中的体现 |
+| ---------- | ----------------- |
+| 粒度       | 单工具            |
+| 对应组件   | ToolNode          |
+| 是否有状态 | 通常无            |
+| 是否推理   | 不负责            |
+| 是否独立   | 否                |
+| 本质       | Tool Execution    |
+
+------
+
+### ToolNode 是什么？
+
+ToolNode 本质：
+
+```text
+Function Call Executor
+```
+
+它只负责：
+
+```text
+tool_name + args
+        ↓
+真正执行 Python函数
+```
+
+它不负责：
+
+- 长流程
+- 记忆
+- 规划
+- 多Agent协作
+
+------
+
+## 二、LangGraph 中的 Skills
+
+这是 LangGraph 真正强大的地方。
+
+在 LangGraph 里：
+
+> Skill ≈ 子图（Subgraph）
+
+------
+
+### 为什么？
+
+因为 LangGraph 本身是：
+
+```text
+StateGraph
+```
+
+而一个复杂能力：
+
+- 往往包含多个节点
+- 多轮推理
+- 条件跳转
+- 状态更新
+
+这天然就是：
+
+```text
+子图 = Skill
+```
+
+------
+
+### 举例：Research Skill
+
+例如：
+
+```text
+ResearchSkill
+├── SearchNode
+├── WebReadNode
+├── SummarizeNode
+└── ReportNode
+```
+
+这在 LangGraph 中：
+
+```python
+research_graph = StateGraph(...)
+```
+
+然后：
+
+```python
+main_graph.add_node(
+    "research_skill",
+    research_graph.compile()
+)
+```
+
+------
+
+### 本质上：
+
+Skill 在 LangGraph 中：
+
+```text
+Skill = 可复用子图
+```
+
+------
+
+### LangGraph 为什么特别适合 Skills？
+
+因为它支持：
+
+| 能力          | LangGraph支持 |
+| ------------- | ------------- |
+| 状态共享      | ✓             |
+| 多步骤        | ✓             |
+| 条件分支      | ✓             |
+| 并发          | ✓             |
+| 多Agent       | ✓             |
+| Checkpoint    | ✓             |
+| Human-in-loop | ✓             |
+
+所以：
+
+LangGraph 特别适合：
+
+```text
+企业级 Skill 编排
+```
+
+------
+
+### Skill 与 Tool 最大区别
+
+这是重点。
+
+------
+
+#### Tool
+
+只是：
+
+```text
+一个动作
+```
+
+例如：
+
+```text
+查天气
+读文件
+发邮件
+```
+
+------
+
+#### Skill
+
+是：
+
+```text
+完成一类复杂任务
+```
+
+例如：
+
+```text
+写周报
+做市场分析
+生成PPT
+自动代码修复
+```
+
+------
+
+### 在 LangGraph 中：
+
+#### Tool：
+
+```python
+ToolNode([tools])
+```
+
+------
+
+#### Skill：
+
+```python
+SubGraph.compile()
+```
+
+------
+
+## 三、LangGraph 中的 MCP
+
+这是 2025~2026 最大变化。
+
+------
+
+### MCP 在 LangGraph 中是什么？
+
+本质：
+
+```text
+外部 Tool Provider
+```
+
+------
+
+以前：
+
+Tool 必须：
+
+```python
+@tool
+def xxx():
+```
+
+写死在本地。
+
+------
+
+现在：
+
+可以：
+
+```text
+LangGraph
+   ↓
+MCP Client
+   ↓
+外部 MCP Server
+```
+
+------
+
+### 例如：
+
+```text
+filesystem-mcp
+github-mcp
+postgres-mcp
+slack-mcp
+notion-mcp
+```
+
+------
+
+### LangGraph 中 MCP 的作用
+
+MCP 解决：
+
+```text
+Tool 来源问题
+```
+
+而不是：
+
+```text
+Workflow问题
+```
+
+------
+
+### 一个完整例子
+
+例如：
+
+用户：
+
+> “读取 GitHub issue 并总结”
+
+------
+
+#### 传统 Tool
+
+你得自己写：
+
+```python
+@tool
+def github_issue_reader():
+```
+
+------
+
+#### MCP 方式
+
+直接：
+
+```text
+连接 github-mcp
+```
+
+它自动暴露：
+
+- list_issue
+- get_issue
+- comment_issue
+
+等工具。
+
+------
+
+#### 在 LangGraph 中：
+
+```text
+LLM Node
+   ↓
+ToolNode
+   ↓
+MCP Tool
+   ↓
+GitHub
+```
+
+------
+
+### 核心区别
+
+| 维度          | Function Call | Skills     | MCP        |
+| ------------- | ------------- | ---------- | ---------- |
+| 本质          | 工具调用      | 工作流能力 | 工具协议   |
+| LangGraph对应 | ToolNode      | SubGraph   | MCP Client |
+| 粒度          | 单动作        | 复杂能力   | 外部生态   |
+| 是否状态化    | 否            | 是         | 否         |
+| 是否包含推理  | 否            | 是         | 否         |
+| 是否可复用    | 一般          | 很强       | 很强       |
+| 是否跨进程    | 不一定        | 不一定     | 是         |
+| 是否标准化    | 否            | 否         | 是         |
+
+------
+
+## 四、真正企业级架构（重点）
+
+现在企业里的典型架构：
+
+```text
+┌──────────────────────┐
+│      Main Graph      │
+└─────────┬────────────┘
+          │
+  ┌───────┼────────┐
+  │       │        │
+  ▼       ▼        ▼
+SkillA  SkillB   SkillC
+  │       │        │
+  ▼       ▼        ▼
+ToolNode ToolNode ToolNode
+  │
+  ▼
+MCP Tools
+  │
+  ▼
+GitHub / DB / Slack
+```
+
+------
+
+## 五、最重要的一句话（LangGraph视角）
+
+你可以这样记：
+
+------
+
+### Function Call
+
+```text
+Agent 会“用工具”
+```
+
+------
+
+### Skill
+
+```text
+Agent 会“做事情”
+```
+
+------
+
+### MCP
+
+```text
+Agent 能“接外部世界”
+```
+
+------
+
+## 六、在实际开发中的定位
+
+### 初级 Agent
+
+```text
+LLM + ToolNode
+```
+
+只有 function call。
+
+------
+
+### 中级 Agent
+
+```text
+LangGraph + SubGraph
+```
+
+开始有 skills。
+
+------
+
+### 企业级 Agent
+
+```text
+LangGraph + Skills + MCP
+```
+
+形成：
+
+- 可扩展
+- 可复用
+- 可插拔
+- 多团队协作
+
+的 Agent 平台。
+
+------
+
+## 七、2026 行业趋势
+
+现在已经逐渐形成：
+
+```text
+LangGraph
+    负责：
+        Workflow / State / Agent
+
+MCP
+    负责：
+        Tool Ecosystem
+
+Function Call
+    负责：
+        Tool Invocation
+
+Skills
+    负责：
+        Capability Packaging
+```
+
+------
+
+## 八、最终一句话总结
+
+在 LangGraph 里：
+
+```text
+Function Call 是节点动作
+Skill 是子图能力
+MCP 是外部工具总线
+```
+
+或者：
+
+```text
+ToolNode = 会调用
+SubGraph = 会做事
+MCP = 会连接世界
+```
+
+# RAGAS
+
+## RAGAS 是什么？
+
+Ragas 是一个：
+
+> 专门用于 RAG（Retrieval-Augmented Generation）系统自动化评估的框架。
+
+它的核心目标：
+
+```text
+不用人工逐条打分，
+让 LLM 自动评估：
+    检索是否正确
+    回答是否可信
+    是否幻觉
+    是否覆盖问题
+```
+
+------
+
+## 一、为什么需要 RAGAS？
+
+传统 LLM 很难评估。
+
+尤其是 RAG 系统：
+
+```text
+用户问题
+   ↓
+向量检索
+   ↓
+召回文档
+   ↓
+LLM生成回答
+```
+
+问题很多：
+
+- 检索错了
+- 文档相关性低
+- 回答胡编
+- 回答不完整
+- 上下文没利用好
+
+------
+
+### 传统评估的问题
+
+以前通常：
+
+```text
+人工看回答
+人工打分
+```
+
+缺点：
+
+| 问题       | 说明                     |
+| ---------- | ------------------------ |
+| 成本高     | 人工贵                   |
+| 不可规模化 | 几百条还能看，上万条不行 |
+| 主观       | 不同人标准不同           |
+| 无法CI/CD  | 不能自动回归测试         |
+
+------
+
+### RAGAS 的核心思想
+
+核心：
+
+```text
+LLM-as-a-Judge
+```
+
+即：
+
+> 用 LLM 来评估另一个 LLM。
+
+------
+
+## 二、RAGAS 能评估什么？
+
+最核心的是 4 个指标。
+
+------
+
+### 1. Faithfulness（真实性）
+
+最重要。
+
+意思：
+
+> 回答是否忠于检索到的上下文。
+
+即：
+
+```text
+有没有幻觉
+```
+
+------
+
+#### 举例
+
+Context：
+
+```text
+乔布斯于2011年去世
+```
+
+Answer：
+
+```text
+乔布斯于2011年去世，享年56岁
+```
+
+如果上下文没有“56岁”：
+
+则可能被判：
+
+```text
+存在幻觉
+```
+
+------
+
+### 2. Answer Relevancy（回答相关性）
+
+评估：
+
+> 回答是否真正回答了问题。
+
+------
+
+例如：
+
+Question：
+
+```text
+什么是 Redis？
+```
+
+Answer：
+
+```text
+Redis 是高性能内存数据库
+```
+
+高分。
+
+------
+
+如果：
+
+```text
+Redis 作者来自意大利
+```
+
+虽然正确：
+
+但没回答问题。
+
+低分。
+
+------
+
+### 3. Context Precision（上下文精确率）
+
+评估：
+
+> 检索出来的文档有多少真正相关。
+
+------
+
+例如：
+
+检索了：
+
+```text
+Redis
+MySQL
+Java
+天气
+```
+
+但问题是 Redis。
+
+则 precision 低。
+
+------
+
+### 4. Context Recall（上下文召回率）
+
+评估：
+
+> 是否检索到了回答问题所需的关键上下文。
+
+------
+
+例如：
+
+问题：
+
+```text
+Redis为什么快？
+```
+
+但没召回：
+
+```text
+基于内存
+单线程
+IO多路复用
+```
+
+则 recall 低。
+
+------
+
+## 三、RAGAS 整体架构
+
+整体：
+
+```text
+Question
+   ↓
+RAG System
+   ↓
+Retrieved Contexts
+   ↓
+Generated Answer
+   ↓
+RAGAS Evaluation
+   ↓
+Metrics Scores
+```
+
+------
+
+## 四、RAGAS 工作原理
+
+RAGAS 内部大量依赖：
+
+```text
+Prompt + LLM Judge
+```
+
+例如：
+
+Faithfulness Prompt：
+
+```text
+根据上下文，
+判断回答是否包含未出现的信息
+```
+
+然后：
+
+LLM 输出：
+
+```text
+0~1 分数
+```
+
+------
+
+## 五、RAGAS 的核心优势
+
+------
+
+### 1. 自动化
+
+支持：
+
+```text
+批量评估
+```
+
+例如：
+
+```text
+10000条Q&A
+```
+
+自动跑。
+
+------
+
+## 2. 不需要人工标注
+
+传统 NLP：
+
+```text
+需要Ground Truth
+```
+
+RAGAS 很多指标：
+
+```text
+不需要标准答案
+```
+
+------
+
+### 3. 特别适合 CI/CD
+
+例如：
+
+```text
+新Embedding模型上线
+```
+
+自动跑：
+
+```text
+RAGAS Benchmark
+```
+
+看：
+
+- precision 是否下降
+- hallucination 是否增加
+
+------
+
+## 六、RAGAS 在 LangChain/LangGraph 中的位置
+
+通常：
+
+```text
+用户请求
+   ↓
+RAG Pipeline
+   ↓
+LangChain/LangGraph
+   ↓
+RAGAS评估
+```
+
+它不是 Agent 框架。
+
+而是：
+
+```text
+Evaluation Framework
+```
+
+------
+
+## 七、典型企业级流程
+
+------
+
+### 1. 构建数据集
+
+```python
+dataset = {
+    "question": ...,
+    "contexts": ...,
+    "answer": ...
+}
+```
+
+------
+
+### 2. 跑 RAGAS
+
+```python
+from ragas import evaluate
+```
+
+------
+
+### 3. 指标输出
+
+```text
+faithfulness: 0.91
+answer_relevancy: 0.88
+context_precision: 0.79
+```
+
+------
+
+### 4. 接入监控
+
+企业里通常：
+
+```text
+LangSmith
+Phoenix
+MLflow
+Grafana
+```
+
+一起使用。
+
+------
+
+## 八、RAGAS 与 LangSmith 的区别
+
+很多人混淆。
+
+------
+
+### RAGAS
+
+负责：
+
+```text
+评估质量
+```
+
+------
+
+### LangSmith
+
+负责：
+
+```text
+追踪运行过程
+```
+
+例如：
+
+- token
+- latency
+- traces
+- graph execution
+
+------
+
+### 企业里通常：
+
+```text
+LangSmith + RAGAS
+```
+
+组合。
+
+------
+
+## 九、RAGAS 的局限
+
+------
+
+### 1. LLM Judge 不稳定
+
+不同模型：
+
+```text
+评分不一致
+```
+
+------
+
+### 2. 成本高
+
+评估本身：
+
+```text
+也要调用LLM
+```
+
+------
+
+### 3. 并非真正客观
+
+本质还是：
+
+```text
+AI评AI
+```
+
+------
+
+### 4. 多跳推理评估困难
+
+复杂 Agent：
+
+```text
+Tool Use
+Memory
+Planning
+```
+
+RAGAS 不一定评得准。
+
+------
+
+## 十、2026 的趋势
+
+现在行业逐渐形成：
+
+------
+
+### 第一层：Observability
+
+例如：
+
+- LangSmith
+- Phoenix
+
+负责：
+
+```text
+监控Agent执行
+```
+
+------
+
+### 第二层：Evaluation
+
+例如：
+
+- Ragas
+- DeepEval
+- TruLens
+
+负责：
+
+```text
+自动化质量评估
+```
+
+------
+
+### 第三层：Optimization
+
+例如：
+
+```text
+自动Prompt优化
+自动Retriever优化
+自动Chunk优化
+```
+
+------
+
+## 十一、RAGAS 核心指标关系图
+
+```text
+Question
+   │
+   ├── Context Precision
+   │       检索是否精准
+   │
+   ├── Context Recall
+   │       检索是否完整
+   │
+   ├── Faithfulness
+   │       回答是否胡编
+   │
+   └── Answer Relevancy
+           回答是否切题
+```
+
+------
+
+## 十二、一句话总结
+
+```text
+RAGAS = RAG系统的自动化质检员
+```
+
+或者：
+
+```text
+LangSmith看“过程”
+RAGAS看“质量”
+```
+
+
+
+
+
 # Fast API
 
 我给你按**最常用、最实战、面试必问**的方式，把 FastAPI 完整分类讲透，**你一看就懂、一用就会**。
@@ -2118,7 +5300,134 @@ for chunk in chain.stream({"input": "西安是陕西省省会，古称长安。"
 
 需要我给你整理**Model I/O全套可直接运行实战代码**吗？
 
+### 最现代的 RAG 结构（LCEL 版）
 
+这是**官方文档唯一推荐、工业级落地、最稳定**的 RAG 写法，**没有之一**。
+
+我直接给你**最简标准模板 + 原理图解 + 代码逐行解析**，你写的代码**完全符合这个标准**。
+
+---
+
+#### 一、官方标准 RAG 结构图（背下来）
+
+```
+输入问题
+   ↓
+【检索器】 → 取出相关文档片段
+   ↓
+【RunnableParallel】并行组装：
+   - context: 检索到的文档
+   - input:  用户原始问题
+   ↓
+【格式化文档】拼接 context 为字符串
+   ↓
+【Prompt】把 问题 + 文档 喂给模型
+   ↓
+【LLM】生成答案
+   ↓
+【解析器】输出最终回答
+```
+
+---
+
+#### 二、官方标准代码（可直接复制）
+
+```python
+from langchain_core.runnables import RunnablePassthrough, RunnableParallel
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+
+# ----------------------
+# 1. 定义 Prompt（标准RAG提示词）
+# ----------------------
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "根据下面的上下文回答问题，不知道就说不知道\n{context}"),
+    ("human", "{input}"),
+])
+
+# ----------------------
+# 2. 定义模型 & 检索器
+# ----------------------
+llm = ...  # 你的模型
+retriever = ...  # 你的向量库检索器
+
+# ----------------------
+# 3. 【官方核心结构】LCEL RAG Chain
+# ----------------------
+
+# 子链：拿到文档后 → 格式化 → 送prompt → 生成答案
+rag_chain_from_docs = (
+    RunnablePassthrough.assign(context=lambda x: "\n\n".join(doc.page_content for doc in x["context"]))
+    | prompt
+    | llm
+    | StrOutputParser()
+)
+
+# 主链：并行检索 + 传参 → 生成答案
+rag_chain = RunnableParallel(
+    {"context": retriever, "input": RunnablePassthrough()}
+).assign(answer=rag_chain_from_docs)
+```
+
+---
+
+#### 三、最关键的 2 个组件（必须懂）
+
+##### 1. **RunnableParallel**
+
+作用：**同时干两件事，不排队**
+- 执行 `retriever` 去查文档
+- 把用户问题直接透传
+
+输出结构：
+```python
+{
+  "context": [文档片段1, 片段2...],
+  "input": "用户问题"
+}
+```
+
+##### 2. **RunnablePassthrough.assign(...)**
+
+作用：**在数据里新增/修改字段**
+这里用来把**文档数组 → 拼接成字符串**，送给 `{context}`。
+
+---
+
+#### 四、为什么这是「官方最标准」？
+
+1. **纯 LCEL 架构**（LangChain 现代流水线）
+2. **流式输出支持**
+3. **可调试、可追踪、可扩展**
+4. **结构清晰，不会乱**
+5. **兼容所有向量库**
+6. **输出结构稳定**：`context + input + answer`
+
+---
+
+#### 五、你的代码 == 官方标准结构 ✅
+
+你写的：
+```python
+rag_chain_from_docs = (
+    RunnablePassthrough.assign(context=(lambda x: format_docs(x["context"])))
+    | prompt
+    | llm
+    | StrOutputParser()
+)
+
+rag_chain = RunnableParallel(
+    {"context": retriever, "input": RunnablePassthrough()}
+).assign(answer=rag_chain_from_docs)
+```
+**和官方标准 100% 一致！**
+
+---
+
+#### 六、一句话记住官方 RAG
+
+> **先并行检索，再格式化文档，最后生成答案。**
+> `RunnableParallel` → `RunnablePassthrough.assign` → `LLM`
 
 ### 2. 检索 (Retrieval)
 
@@ -2632,15 +5941,14 @@ print(res2)  # 你叫小明。
    chain = LLMChain(prompt=prompt, llm=chat_model)
    ```
 
-```
-   
+
 2. **RetrievalQAChain**
    检索 + 问答链，RAG 专用
    
    ```python
    from langchain.chains import RetrievalQA
    chain = RetrievalQA.from_llm(llm=chat_model, retriever=retriever)
-```
+   ```
 
 ###### 缺点
 
@@ -3184,7 +6492,907 @@ print(result["output"])
 
 **Chain 是死板固定流水线，Agent 是会思考、会动手、会办事的智能员工。**
 
-需要我给你整理 **Agent 面试题+答案**，或者 **带记忆的多轮Agent完整代码**吗？
+
+
+### LangChain Agent 
+
+#### 一、核心概念
+
+##### 1. 什么是 Agent
+
+**Agent = 大模型LLM + 决策逻辑 + 工具调用 + 记忆 + 执行器**
+不再只会单纯聊天，**能自主思考、判断是否调用工具、选哪个工具、执行、汇总答案**。
+核心思想：**让LLM当大脑，自主规划行动**
+
+##### 2. 核心组成五件套
+
+1. **LLM**：决策大脑，思考下一步做什么
+2. **Tools 工具**：外部能力（计算器、搜索、数据库、API、RAG检索）
+3. **Agent 核心逻辑**：思考模板+提示词规则
+4. **Memory 记忆**：上下文对话记忆
+5. **AgentExecutor 执行器**：循环调度、异常捕获、流程控制
+
+##### 3. 运行流程（必考）
+
+```
+用户提问 → LLM思考
+→ 是否需要调用工具？
+   是 → 选择工具 → 解析参数 → 执行工具 → 拿到结果回到LLM
+   否 → 直接生成答案输出
+循环直到无需工具，给出最终回答
+```
+
+#### 二、4Agent 底层工作原理
+
+##### 1. 核心推理范式：ReAct
+
+**Reason + Act 思考+行动**
+- Thought：思考我该做什么
+- Action：确定调用哪个工具、传什么参数
+- Observation：工具返回结果
+- 循环往复
+
+LLM依靠**固定Prompt模板**输出指定格式文本，程序解析文本完成工具调用。
+
+##### 2. 两大主流调用机制
+
+1. **提示词解析式（传统React）**
+   LLM输出自然语言格式动作，代码正则提取工具名+参数
+   优点：通用所有大模型
+   缺点：格式易乱、不稳定
+
+2. **函数调用式（OpenAI Function / Tool Call）**
+   LLM原生输出结构化JSON函数调用
+   优点：精准、稳定、工业级首选
+   缺点：仅支持具备函数调用能力模型
+
+#### 三、LangChain 主流 Agent 类型（最全分类）
+
+##### 1. ZeroShotAgent 零样本智能体
+
+- 最经典：`ZERO_SHOT_REACT_DESCRIPTION`
+- 无需样本，靠**工具描述**自动判断调用
+- 适用：简单工具、快速上手
+- 缺点：复杂任务容易乱格式
+
+##### 2. StructuredChatAgent 结构化对话Agent
+
+- 支持**多参数复杂工具**
+- 输出严格结构化格式
+- 企业级常用
+
+##### 3. OpenAIToolsAgent（最强推荐）
+
+- 基于OpenAI原生 `tool_call`
+- **现在LangChain官方主推**
+- 格式永不乱、支持多工具并行调用
+- 适配 gpt-3.5/4o
+
+##### 4. ConversationalAgent 对话记忆Agent
+
+- 自带对话记忆
+- 适合多轮聊天+工具调用场景
+
+##### 5. RetrievalAgent 检索Agent（RAG+Agent）
+
+- 联网/知识库检索 + 问答结合
+- 解决大模型幻觉、实时信息
+
+##### 6. Plan-and-Execute 规划执行Agent
+
+**复杂长任务首选**
+两层结构：
+1. Planner规划器：拆分任务成步骤清单
+2. Executor执行器：逐步骤执行Agent
+适合：写方案、数据分析、复杂流程任务
+
+##### 7. Self-Reflection 自省反思Agent
+
+执行完任务自我复盘纠错，提升准确率
+
+#### 四、核心组件详解
+
+##### 1. Tool 工具定义
+
+###### 两种写法
+
+1）装饰器写法（最简）
+```python
+from langchain_core.tools import tool
+
+@tool
+def add_num(a:int,b:int)->int:
+    """加法计算器，用于计算两个数字之和
+    参数：
+        a: 第一个整数
+        b: 第二个整数
+    """
+    return a+b
+```
+**重点**：函数注释必须清晰，LLM靠注释理解用途
+
+2）自定义BaseTool（企业级）
+继承`BaseTool`，可控性最强
+
+##### 2. Memory 记忆体系
+
+- `ConversationBufferMemory`：完整对话缓存
+- `ConversationSummaryMemory`：摘要记忆（省token）
+- `VectorStoreRetrieverMemory`：向量知识库记忆
+Agent搭配记忆实现**多轮连续调用工具**
+
+##### 3. AgentExecutor 执行器
+
+**Agent真正运行入口**
+核心能力：
+1. 循环迭代调用
+2. 最大迭代次数限制（防死循环）
+3. 异常捕获、工具返回值格式化
+4. 终止条件判断
+
+关键参数：
+- `verbose=True`：打印完整思考日志
+- `max_iterations`：最大思考轮数
+- `handle_parsing_errors`：自动修复解析错误
+
+#### 五、官方标准实战代码（OpenAI Tool Agent 新版）
+
+##### 环境安装
+
+```bash
+pip install langchain langchain-openai python-dotenv
+```
+
+##### 完整可运行代码
+
+```python
+from dotenv import load_dotenv
+import os
+from langchain_openai import ChatOpenAI
+from langchain_core.tools import tool
+from langchain.agents import AgentExecutor, create_openai_tools_agent
+from langchain_core.prompts import ChatPromptTemplate
+
+load_dotenv()
+
+# 1. 初始化大模型
+llm = ChatOpenAI(
+    model="gpt-3.5-turbo-1106",
+    api_key=os.getenv("OPENAI_API_KEY"),
+    openai_proxy=os.getenv("OPENAI_PROXY")
+)
+
+# 2. 定义工具
+@tool
+def calculate_mul(x:float,y:float)->float:
+    """计算两个数字相乘，数学乘法运算"""
+    return x*y
+
+@tool
+def get_current_time()->str:
+    """获取当前系统时间"""
+    from datetime import datetime
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+tools = [calculate_mul, get_current_time]
+
+# 3. 构建提示词
+prompt = ChatPromptTemplate.from_messages([
+    ("system","你是专业智能助手，优先使用工具完成用户问题"),
+    ("user","{input}"),
+    ("placeholder","{agent_scratchpad}")
+])
+
+# 4. 创建Agent + 执行器
+agent = create_openai_tools_agent(llm, tools, prompt)
+agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+
+# 5. 调用
+if __name__ == "__main__":
+    res = agent_executor.invoke({"input":"现在时间是多少？再算一下28.6乘以15.3等于多少"})
+    print("最终结果：",res["output"])
+```
+
+#### 六、新旧版Agent API区别
+
+##### 旧版（废弃不推荐）
+
+```python
+from langchain.agents import initialize_agent, AgentType
+agent = initialize_agent(tools,llm,agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION)
+```
+缺点：臃肿、维护停止、格式容易报错
+
+##### 新版（官方推荐）
+
+- `create_openai_tools_agent`
+- `create_structured_chat_agent`
+- `create_react_agent`
+**全部基于LCEL架构，流式、可组合、易扩展**
+
+#### 七、Agent 常见问题与调优
+
+1. **不调用工具**
+   - 工具注释不清晰
+   - 问题太简单无需工具
+   - 模型不支持函数调用
+
+2. **死循环一直调用工具**
+   配置 `max_iterations=5` 限制最大轮数
+
+3. **解析格式报错**
+   优先换成 **OpenAIToolsAgent** 彻底解决
+
+4. **token消耗大**
+   改用摘要记忆、精简工具描述、限制上下文长度
+
+5. **本地开源模型跑Agent**
+   放弃FunctionCall，使用**React Agent + 严格提示词**
+
+#### 八、Agent 高阶场景
+
+1. **多Agent协作**：管理者Agent + 执行Agent分工
+2. **Agent + RAG**：智能检索知识库再回答
+3. **Agent + 数据库**：自动生成SQL查询数据
+4. **Agent 流式输出**：逐步返回思考+结果
+5. **Agent 日志监控**：搭配LangSmith全链路调试
+
+#### 九、面试高频考点总结
+
+1. Agent 执行流程：思考→行动→观测→循环
+2. React范式含义：Reason + Act
+3. 传统Agent与FunctionCall Agent区别
+4. AgentExecutor作用：循环调度与流程控制
+5. 如何防止Agent死循环
+6. Plan-and-Execute适用场景
+7. 工具定义规范与注意事项
+
+### AgentExecutor 执行器 
+
+---
+
+##### 一、AgentExecutor 到底是什么？
+
+一句话：
+**AgentExecutor = Agent 的“总调度指挥官”**
+
+- Agent 只负责**思考**（我该调用什么工具）
+- AgentExecutor 负责**执行、循环、纠错、收尾**
+
+没有它，Agent 只是一堆想法，**永远跑不起来**。
+
+---
+
+##### 二、核心能力（你写的 4 点，我展开讲透）
+
+###### 1. 循环迭代调用（最核心机制）
+
+执行流程：
+
+```
+用户提问 → LLM思考 → 调用工具 → 获取结果 → 再思考 → 再调用…
+直到不需要工具 → 输出最终答案
+```
+
+这一整套**循环**，全部由 AgentExecutor 控制。
+
+---
+
+###### 2. 最大迭代次数限制（防死循环）
+
+LLM 偶尔会发疯：
+
+- 反复调用同一个工具
+- 无限思考
+- 格式解析错误死循环
+
+所以 AgentExecutor 强制加了**安全锁**：
+
+```python
+max_iterations=5  # 默认 15，建议设 5~10
+```
+
+超过次数直接强制停止，避免卡死、浪费 token。
+
+---
+
+###### 3. 异常捕获、工具返回值格式化
+
+你不用写任何 try-catch，AgentExecutor 自动处理：
+
+- 工具执行报错
+- 网络超时
+- LLM 返回格式乱码
+- 参数传错
+
+它会把错误信息**整理成自然语言**丢回 LLM，让 LLM **自己修正**。
+
+---
+
+###### 4. 终止条件判断
+
+什么时候停止循环？AgentExecutor 判断：
+
+- LLM 输出 **Final Answer**
+- 达到最大迭代次数
+- 发生无法修复的错误
+- 用户手动停止
+
+满足任一条件 → 结束任务 → 返回结果。
+
+---
+
+##### 三、关键参数详解（最实用）
+
+###### 1. `verbose=True`（调试神器）
+
+打印**完整思考过程**：
+
+```
+> 进入新AgentExecutor链...
+思考：我需要调用计算器
+行动：调用calculator(3,5)
+观察：结果是15
+思考：我现在可以给出答案
+最终答案：15
+```
+
+开发 100% 必须开，否则你不知道 Agent 为什么不调用工具。
+
+---
+
+###### 2. `max_iterations`（最大迭代次数）
+
+```python
+max_iterations=5
+```
+
+作用：防止死循环、无限调用工具、无限思考。
+
+---
+
+###### 3. `handle_parsing_errors`（解析错误自动修复）
+
+LLM 偶尔输出格式乱了，解析失败。
+
+开启：
+
+```python
+handle_parsing_errors=True
+```
+
+AgentExecutor 会：
+
+1. 捕获错误
+2. 把错误信息发给 LLM
+3. 让 LLM **重新输出正确格式**
+4. 继续执行
+
+不会直接崩溃。
+
+---
+
+##### 四、完整使用示例（最标准写法）
+
+```python
+from langchain.agents import AgentExecutor
+
+agent_executor = AgentExecutor(
+    agent=agent,          # 你的Agent
+    tools=tools,          # 工具列表
+    verbose=True,         # 打印思考过程（必开）
+    max_iterations=5,     # 最大思考5轮
+    handle_parsing_errors=True  # 格式错了自动修复
+)
+```
+
+---
+
+##### 五、AgentExecutor 工作流程图（极简版）
+
+```
+用户问题
+    ↓
+[执行器启动]
+    ↓
+LLM思考 → 是否调用工具？
+    ↓             ↓
+  是 → 调用工具 → 拿回结果 → 回到LLM
+    ↓
+  否 → 输出最终答案 → 结束
+```
+
+---
+
+##### 六、最关键的一句话总结
+
+**Agent 负责想，Executor 负责干。**
+
+- Agent = 大脑
+- Executor = 手脚 + 调度中心 + 安全卫士
+
+### AgentExecutor 
+
+我用**最通俗、最完整、最能直接用**的方式，把 **AgentExecutor** 讲得明明白白。这是 LangChain Agent 里**最核心、最容易被误解**的组件。
+
+---
+
+#### 一、一句话定义
+
+##### **AgentExecutor = Agent 的运行时、调度器、总控制器**
+
+- **Agent 只负责“思考”**：下一步做什么、调用哪个工具
+- **AgentExecutor 负责“执行”**：循环、调用工具、处理错误、限制次数、输出结果
+
+没有 AgentExecutor，**Agent 根本跑不起来**。
+
+---
+
+#### 二、核心作用（必须背下来）
+
+1. **循环执行**：思考 → 调用工具 → 拿回结果 → 再思考…
+2. **工具调用**：真正去执行你定义的函数
+3. **错误处理**：解析失败、工具报错、网络异常都能接住
+4. **安全控制**：限制最大迭代次数，防止死循环
+5. **结果整理**：把最终答案返回给你
+
+---
+
+#### 三、完整工作流程（超清晰）
+
+```
+1. 用户输入问题
+2. AgentExecutor 交给 Agent 去思考
+3. Agent 返回：要调用 XX 工具 + 参数
+4. AgentExecutor 执行工具
+5. 把工具结果返回给 Agent
+6. 重复 2~5 直到 Agent 说“可以给最终答案”
+7. 返回结果
+```
+
+---
+
+#### 四、构造函数完整参数（最全）
+
+```python
+agent_executor = AgentExecutor(
+    agent=agent,                  # 必须：Agent 实例（思考大脑）
+    tools=tools,                  # 必须：工具列表
+    verbose=False,                # 打印思考过程（调试必开）
+    max_iterations=15,            # 最大思考轮数（防死循环）
+    max_execution_time=None,       # 最大执行时间（秒）
+    early_stopping_method="force", # 超次数后如何停止
+    handle_parsing_errors=False,   # 解析错误自动修复（强烈推荐开）
+    return_intermediate_steps=False, # 返回思考过程（调试用）
+    trim_intermediate_steps=True   # 精简上下文，省 token
+)
+```
+
+---
+
+#### 五、每个参数详细解释
+
+##### 1. `agent`
+
+- 传入由 `create_openai_tools_agent` / `create_react_agent` 等创建的**思考组件**
+- 它只输出下一步行动
+
+##### 2. `tools`
+
+- 你定义的工具列表
+- AgentExecutor 会根据 Agent 的指令**自动从中找到并执行**
+
+##### 3. `verbose=True`（调试神器）
+
+开启后会打印：
+```
+> 进入新AgentExecutor链
+思考：我需要查询时间
+行动：调用 get_current_time()
+观察：2025-xx-xx xx:xx:xx
+思考：我可以回答了
+最终答案：现在时间是...
+```
+**开发必须开，否则你不知道 Agent 为什么不干活。**
+
+##### 4. `max_iterations`（最重要的安全参数）
+
+- 默认：15
+- 作用：限制最大思考+调用次数
+- **防止死循环、无限调用工具、疯狂耗 token**
+
+推荐设置：
+```python
+max_iterations=5
+```
+
+##### 5. `handle_parsing_errors=True`（救命参数）
+
+LLM 偶尔会输出乱格式，导致解析失败。
+
+开启后：
+- 不会崩溃
+- 自动把错误发给 LLM
+- 让 LLM **重新输出正确格式**
+
+强烈建议永远打开：
+```python
+handle_parsing_errors=True
+```
+
+##### 6. `return_intermediate_steps=True`
+
+返回**完整思考+行动过程**，用于调试、日志、展示工作流。
+
+结果里会包含：
+- 每一步思考
+- 调用的工具
+- 工具返回结果
+
+##### 7. `max_execution_time`
+
+设置最长运行时间（秒），超时强制结束。
+
+---
+
+#### 六、最标准、最推荐的写法（复制即用）
+
+```python
+from langchain.agents import AgentExecutor
+
+agent_executor = AgentExecutor(
+    agent=agent,
+    tools=tools,
+    verbose=True,                # 调试必开
+    max_iterations=5,            # 防止死循环
+    handle_parsing_errors=True,  # 自动修复格式错误
+)
+```
+
+---
+
+#### 七、调用方式
+
+##### 1. 最常用
+
+```python
+result = agent_executor.invoke({"input": "你的问题"})
+print(result["output"])
+```
+
+##### 2. 流式输出
+
+```python
+for chunk in agent_executor.stream({"input": "问题"}):
+    print(chunk, end="")
+```
+
+---
+
+#### 八、Agent 和 AgentExecutor 的区别（终极总结）
+
+| 组件              | 作用                   | 定位                     |
+| ----------------- | ---------------------- | ------------------------ |
+| **Agent**         | 思考、决策、输出指令   | 大脑                     |
+| **AgentExecutor** | 执行、循环、调度、纠错 | 身体 + 指挥官 + 安全卫士 |
+
+- **Agent 不执行工具，只决定用什么工具**
+- **真正执行工具的是 AgentExecutor**
+
+---
+
+#### 九、你必须记住的 3 句话
+
+1. **Agent 负责想，Executor 负责干**
+2. **AgentExecutor 是 Agent 唯一能跑起来的方式**
+3. 永远开：`verbose=True`, `max_iterations=5`, `handle_parsing_errors=True`
+
+###  LangChain 新旧版 Agent API ****
+
+我用**最清晰、最直白、最能帮你避坑**的方式，把这一块彻底讲明白，让你以后写代码**只写新版、绝不踩旧版雷**。
+
+---
+
+#### 一、先记住一句话
+
+##### **旧版 = 过时、臃肿、不稳定、官方已放弃**
+
+##### **新版 = 现代、稳定、LCEL 架构、官方主推**
+
+---
+
+#### 二、旧版 API（initialize_agent）深度吐槽
+
+##### 1. 旧版代码长这样
+
+```python
+# 🔥 过时！不推荐！千万别再用了！
+from langchain.agents import initialize_agent, AgentType
+
+agent = initialize_agent(
+    tools,
+    llm,
+    agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
+    verbose=True
+)
+```
+
+##### 2. 旧版 5 大致命缺点（真实开发血泪）
+
+1. **封装太死**
+   内部逻辑黑盒，你改不了提示词、改不了流程。
+
+2. **格式极易报错**
+   依赖 LLM 输出固定文本格式，稍微乱一点就直接崩溃。
+
+3. **不支持流式输出**
+   无法像聊天一样逐字返回，体验极差。
+
+4. **不兼容 LCEL**
+   无法和新版 LangChain 语法组合使用。
+
+5. **官方停止维护**
+   文档里已经标记 **Deprecated（废弃）**。
+
+---
+
+#### 三、新版 API（create_*_agent）官方标准方案
+
+##### 1. 新版三大核心函数（必须背下来）
+
+| 函数名                           | 适用模型   | 特点                             | 推荐度 |
+| -------------------------------- | ---------- | -------------------------------- | ------ |
+| **create_openai_tools_agent**    | OpenAI GPT | 原生函数调用，**最稳定、不报错** | ⭐⭐⭐⭐⭐  |
+| **create_structured_chat_agent** | 所有模型   | 支持多参数工具，格式严谨         | ⭐⭐⭐⭐   |
+| **create_react_agent**           | 所有模型   | 经典 ReAct 范式，兼容开源模型    | ⭐⭐⭐    |
+
+###### 3 个 Agent 函数参数完全相同
+
+全部都只需要 **3 个参数**，顺序、格式、用法 100% 一致：
+
+```python
+agent = create_xxx_agent(
+    llm,       # 大模型
+    tools,     # 工具列表
+    prompt     # 提示词模板
+)
+```
+
+**代码示例**
+
+```python
+from langchain.agents import (
+    create_openai_tools_agent,
+    create_react_agent,
+    create_structured_chat_agent
+)
+
+# 三个函数参数完全一样！
+agent1 = create_openai_tools_agent(llm, tools, prompt)
+agent2 = create_react_agent(llm, tools, prompt)
+agent3 = create_structured_chat_agent(llm, tools, prompt)
+```
+
+**你只需要改函数名，其他代码完全不用动！**
+
+###### 二、为什么参数相同？
+
+因为它们都遵循 **LangChain 最新 LCEL 架构**：
+
+- 统一输入
+- 统一输出
+- 统一提示词结构
+- 统一调度方式
+
+这就是 LangChain 新版的强大：**一套代码，无缝切换 Agent 类型**。
+
+------
+
+###### 三、唯一区别：内部推理方式不同
+
+|              函数名              |          推理方式           |    适用场景    |
+| :------------------------------: | :-------------------------: | :------------: |
+|  **create_openai_tools_agent**   | OpenAI 原生函数调用（最稳） |    GPT 系列    |
+|      **create_react_agent**      |  ReAct 思考 - 行动（通用）  |    开源模型    |
+| **create_structured_chat_agent** |      结构化 JSON 输出       | 复杂多参数工具 |
+
+##### 2. 新版最大优势
+
+- **基于 LCEL 架构**（LangChain 现代流水线）
+- **流式输出支持**
+- **提示词完全可控**（你自己写 prompt）
+- **不会乱格式**（尤其是 OpenAI 版）
+- **可组合、可扩展、可调试**
+
+---
+
+#### 四、新版标准写法（可直接复制）
+
+```python
+# ✅ 新版官方推荐写法
+from langchain.agents import create_openai_tools_agent, AgentExecutor
+
+# 1. 创建 agent（只负责思考）
+agent = create_openai_tools_agent(llm, tools, prompt)
+
+# 2. 创建执行器（负责运行）
+agent_executor = AgentExecutor(
+    agent=agent,
+    tools=tools,
+    verbose=True,
+    max_iterations=5
+)
+```
+
+---
+
+#### 五、最关键区别（一张图看懂）
+
+##### 旧版
+
+```
+initialize_agent = 黑盒
+你无法控制 prompt、流程、格式
+```
+
+##### 新版
+
+```
+create_*_agent = 只创建思考逻辑
+AgentExecutor   = 只负责执行运行
+
+完全解耦、完全可控、完全稳定
+```
+
+---
+
+#### 六、终极结论（开发必看）
+
+##### **永远不要再用 initialize_agent！**
+
+###### **新项目一律使用新版 create_*_agent！**
+
+###### 最简单记忆法：
+
+- **用 OpenAI GPT** → `create_openai_tools_agent`
+- **用开源模型** → `create_react_agent`
+- **复杂工具多参数** → `create_structured_chat_agent`
+
+### create_sql_agent 
+
+下面我把 **create_sql_agent 到底是什么、和前面三个有啥不一样、参数怎么写、什么时候用** 一次性讲清楚，保持和你前面那三个（openai-tools / react / structured）一样直白、实用、可直接复制。
+
+---
+
+#### 一、create_sql_agent 是什么？
+
+一句话：
+> **它是 LangChain 官方封装好的「数据库专用 Agent」，内部已经帮你装好「查表、查 schema、执行 SQL、错误重试」全套工具，不用自己写 tool，直接连库就能问自然语言。**
+
+它属于 **langchain_community.agent_toolkits**，不是 langchain.agents 里的通用 agent。
+
+---
+
+#### 二、它和你之前那三个的区别（最重要）
+
+你记的这三个：
+
+- create_openai_tools_agent → **通用、OpenAI 函数调用**
+- create_react_agent → **通用、开源模型、ReAct**
+- create_structured_chat_agent → **通用、多参数工具、结构化输出**
+
+**共同点：都是「通用 Agent 工厂」，工具要你自己写、自己传。**
+
+---
+
+##### create_sql_agent 完全不一样：
+
+- **专用：只用来做「自然语言 → SQL → 查库」**
+- **内置全套 SQL 工具：不用你写 @tool**
+  - 列出所有表
+  - 查看表结构（schema）
+  - 执行 SELECT（自动防 DML，只读）
+  - SQL 报错自动重试
+- **内部已经封装好 prompt + 流程 + 安全规则**
+
+所以：
+> **它不是和前面三个并列的通用 agent，而是「垂直领域（SQL）的一键式 agent」。**
+
+---
+
+#### 三、参数长什么样（直接对比）
+
+##### 1）你之前的三个（通用）
+
+```python
+agent = create_xxx_agent(
+    llm,
+    tools,
+    prompt
+)
+```
+
+##### 2）create_sql_agent（专用）
+
+```python
+from langchain_community.agent_toolkits import create_sql_agent
+
+agent_executor = create_sql_agent(
+    llm=llm,
+    db=db,                      # SQLDatabase 实例（必填）
+    agent_type="openai-tools", # 底层用哪种 agent（和你前面三个对应）
+    verbose=True,
+    max_iterations=5
+)
+```
+**参数完全不一样！**
+- 没有 `tools`（内置了）
+- 没有 `prompt`（有默认，也可自定义）
+- 多了 `db`（必须传数据库连接）
+- 多了 `agent_type`（底层可以选 openai-tools / react / structured）
+
+---
+
+#### 四、agent_type 怎么选（和你前面记忆完全对齐）
+
+```python
+agent_type="openai-tools"   → 对应 create_openai_tools_agent（GPT 最稳）
+agent_type="tool-calling"    → 对应 create_structured_chat_agent（复杂工具）
+agent_type="zero-shot-react-description" → 对应 create_react_agent（开源模型）
+```
+**也就是说：create_sql_agent 底层可以“选”你前面学的三种通用 agent 之一，套上 SQL 专用壳。**
+
+---
+
+#### 五、什么时候用它？
+
+- ✅ 你要做 **自然语言问答数据库**
+- ✅ 不想自己写 list_tables / get_schema / run_sql 等工具
+- ✅ 想要 **开箱即用、自动防删改、自动重试 SQL 错误**
+- ✅ 快速原型、BI 问答、客服查订单数据
+
+**一句话：只要是「用自然语言查数据库」，优先用 create_sql_agent，别自己造轮子。**
+
+---
+
+#### 六、最简可运行示例（复制即用）
+
+```python
+from langchain_openai import ChatOpenAI
+from langchain_community.utilities import SQLDatabase
+from langchain_community.agent_toolkits import create_sql_agent
+
+# 1. 连库（SQLite 示例）
+db = SQLDatabase.from_uri("sqlite:///mydb.db")
+
+# 2. 模型
+llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
+
+# 3. 创建 SQL Agent（一键）
+agent_executor = create_sql_agent(
+    llm=llm,
+    db=db,
+    agent_type="openai-tools",  # 和你前面学的对应
+    verbose=True,
+    max_iterations=5
+)
+
+# 4. 直接问自然语言
+agent_executor.run("帮我查一下2025年每个月的订单总额")
+```
+
+---
+
+#### 七、终极总结（背这 4 句）
+
+1. **create_sql_agent = 数据库专用、开箱即用的 Agent**
+2. **参数和前面三个通用 agent 不一样（db 必传，无 tools）**
+3. **agent_type 可以选 openai-tools / react / structured**
+4. **专门做自然语言→SQL，不用自己写工具**
+
+---
+
+要不要我给你一张 **「4 个 Agent 对比速查表」**，把适用场景、参数、是否内置工具、import 路径全部列在一起，方便你面试和开发快速翻？
 
 ### 5.代理区别
 

@@ -2198,6 +2198,270 @@ def parallel_node(state) -> Command:
     return Command(goto=["tool1", "tool2"])
 ```
 
+
+
+#### **Send （LangGraph 分布式/子图/并行核心）**
+
+是 **LangGraph 最强大的高级指令**：
+
+```python
+from langgraph.types import Send
+
+def parent_node(state) -> Command:
+    return Command(
+        goto=Send("subgraph", {"input": state["query"]})
+    )
+```
+
+---
+
+##### ✅ **一、Send 到底是什么？**
+
+**Send = 向另一个节点 / 子图 发送一条独立执行任务**
+它不是简单的“跳转”，而是：
+
+###### **Send = 派发任务**
+
+- 把**独立的状态数据**
+- 发送到**指定节点**
+- 让它**单独执行一次**
+
+---
+
+##### ✅ **二、Send 的核心作用（3 个）**
+
+###### 1. **向子图/子节点发送独立任务（最常用）**
+
+```python
+Send("节点名", 要传给该节点的状态dict)
+```
+你告诉图：
+> **不用跳转，我给你发一个独立任务，你去执行这个子节点。**
+
+###### 2. **支持并行执行（Map-Reduce）**
+
+```python
+return Command(goto=[
+    Send("nodeA", {"x": 1}),
+    Send("nodeA", {"x": 2}),
+    Send("nodeA", {"x": 3}),
+])
+```
+**一次性发 3 个任务 → 并行执行**
+这是 LangGraph 实现 **并发、多工具调用、多文档检索** 的核心。
+
+###### 3. **隔离状态，互不干扰**
+
+每个 Send 都会创建**独立的状态副本**
+子图执行不会污染父图状态。
+
+---
+
+##### ✅ **三、Send vs 普通 goto 的区别（面试必问）**
+
+| 方式               | 作用             | 状态               | 用途                     |
+| ------------------ | ---------------- | ------------------ | ------------------------ |
+| **goto="node"**    | 跳转到节点       | **共用同一个状态** | 普通流程跳转             |
+| **goto=Send(...)** | **派发独立任务** | **创建新状态**     | 子图、并行、路由、多调用 |
+
+---
+
+##### ✅ **四、你的代码含义解释**
+
+```python
+Send("subgraph", {"input": state["query"]})
+```
+
+含义：
+1. **向 subgraph 这个子图/节点发送任务**
+2. **传递独立状态：{"input": 你输入的内容}**
+3. **父图不等待、不跳转，只是派发任务**
+
+---
+
+##### ✅ **五、Send 最经典使用场景**
+
+###### 1. **语义路由（你最需要的）**
+
+```python
+def router(state):
+    intent = llm.get_intent()
+    return Command(goto=Send(intent, {}))  # 发送到对应节点
+```
+→ **这就是 Command API 替代条件边**
+
+###### 2. **多工具并行调用**
+
+```python
+return Command(goto=[
+    Send("weather", {}),
+    Send("calendar", {}),
+    Send("search", {})
+])
+```
+
+###### 3. **主子图通信**
+
+父图 → Send → 子图执行 → 结果返回父图
+
+---
+
+##### ✅ **六、一句话记住 Send**
+
+###### **Send = 向目标节点派发一个独立、带状态的执行任务**
+
+- 支持**并行**
+- 支持**隔离状态**
+- 支持**子图**
+- 是 **LangGraph 实现路由、并发、子流程的终极武器**
+
+---
+
+#### **list 并行执行**
+
+```python
+def parallel_node(state) -> Command:
+    return Command(goto=["tool1", "tool2"])
+```
+
+---
+
+##### ✅ **1. 这段代码的作用：同时跑两个节点！**
+
+`goto=[节点1, 节点2]`  
+= **命令图：并行执行 tool1 和 tool2**
+
+- 不是先跑 tool1 再跑 tool2
+- 是**同时跑 tool1 和 tool2**
+- 两个节点**并行执行**
+- 执行完后，LangGraph 自动**合并结果**回到父图
+
+---
+
+##### ✅ **2. 它和 Send 的关系（必须懂）**
+
+```python
+goto=["tool1", "tool2"]
+```
+**等价于**
+```python
+goto=[
+    Send("tool1", state),
+    Send("tool2", state)
+]
+```
+
+也就是说：
+**数组形式 = 简化版并行 Send**
+LangGraph 会自动帮你包装成 `Send` 并把当前状态发过去。
+
+---
+
+##### ✅ **3. 三种 goto 写法对比（面试必考）**
+
+###### ① 普通跳转（串行）
+
+```python
+goto="tool1"
+```
+→ 跳过去执行
+
+###### ② 并行执行（你现在用的）
+
+```python
+goto=["tool1", "tool2"]
+```
+→ **同时执行 tool1、tool2**
+→ 自动并发
+→ 自动等所有完成
+→ 自动合并状态
+
+###### ③ 高级并行（自定义每个节点输入）
+
+```python
+goto=[
+    Send("tool1", {"query": "天气"}),
+    Send("tool2", {"query": "时间"})
+]
+```
+→ 给不同节点发**不同参数**
+
+---
+
+##### ✅ **4. 完整可运行代码（你这段的完整版）**
+
+```python
+from langgraph.types import Command
+from langgraph.graph import StateGraph, MessagesState
+
+# 状态
+class State(MessagesState):
+    pass
+
+# 并行节点（你写的核心）
+def parallel_node(state: State) -> Command:
+    # 🔥 同时执行 tool1 和 tool2
+    return Command(goto=["tool1", "tool2"])
+
+# 工具节点1
+def tool1(state: State):
+    print("执行 tool1")
+    return {"messages": ["tool1 结果"]}
+
+# 工具节点2
+def tool2(state: State):
+    print("执行 tool2")
+    return {"messages": ["tool2 结果"]}
+
+# 构建流程图
+wf = StateGraph(State)
+wf.add_node("parallel", parallel_node)
+wf.add_node("tool1", tool1)
+wf.add_node("tool2", tool2)
+
+wf.set_entry_point("parallel")
+wf.add_edge("tool1", "__end__")
+wf.add_edge("tool2", "__end__")
+
+app = wf.compile()
+
+# 测试
+app.invoke({"messages": []})
+```
+
+**输出：**
+```
+执行 tool1
+执行 tool2
+```
+**真正并行！**
+
+---
+
+##### ✅ **5. 面试满分总结**
+
+```python
+Command(goto=["tool1", "tool2"])
+```
+
+**作用：让 LangGraph 并行执行多个节点，自动并发、自动等待、自动合并结果，完全替代条件边 + 复杂路由逻辑。**
+
+---
+
+##### 🔥 终极一句话
+
+**goto 列表 = 并行执行**
+**goto 字符串 = 串行跳转**
+**goto Send = 自定义任务派发**
+
+---
+
+需要我给你写 **「并行执行 + 语义路由 + 无任何条件边」的终极版 Agent** 吗？
+你现在已经掌握 LangGraph 最高级的 3 个能力了：
+- `Command`
+- `Send`
+- `goto=[]` 并行
+
 ---
 
 ### 五、Command vs 条件边（Conditional Edges）
@@ -2583,6 +2847,123 @@ async def run():
 | `get_graph()`             | 获取图结构     |
 | `interrupt_before/after`  | 流程断点       |
 | `Command(goto=...)`       | 节点内动态路由 |
+
+#### `workflow.compile()` **所有参数超详细解释**
+
+（专门对照**你的代码**，只讲实战中**真的会用到**的）
+
+我把你代码里用到的 + 最常用的参数，一次性讲全、讲透。
+
+---
+
+##### 一、先看你自己的代码
+
+```python
+app = workflow.compile(
+    checkpointer=memory,
+    interrupt_before=["reviewer"],
+)
+```
+
+这是 **LangGraph 生产级必备配置**。
+
+---
+
+##### 二、`compile()` **所有核心参数详解**
+
+###### 1. **checkpointer**（最核心！持久化）
+
+```python
+checkpointer=memory
+```
+**作用：**
+- 开启**检查点持久化**
+- 每执行一个节点，自动保存状态
+- 崩溃、重启、暂停、人工干预，**进度不会丢**
+- 支持**断点续跑**
+
+**没有它 = 临时运行，断了就重来**
+**有它 = 生产级、可中断、可恢复**
+
+---
+
+###### 2. **interrupt_before**（人工介入 HIL）
+
+```python
+interrupt_before=["reviewer"]
+```
+**作用：**
+- 在**进入某个节点之前暂停**
+- 等待**人工确认/修改**
+- 你这里是：**到审核节点前自动暂停**
+
+**典型用途：**
+人工审核内容、人工确认、人工修改结果，再继续执行。
+
+---
+
+###### 3. **interrupt_after**（执行完某节点后暂停）
+
+```python
+interrupt_after=["editor"]
+```
+**作用：**
+执行完某个节点**之后暂停**
+
+---
+
+###### 4. **debug**（调试模式）
+
+```python
+debug=True
+```
+**作用：**
+- 打印详细执行日志
+- 看到每个节点输入输出
+- 开发调试用
+
+---
+
+###### 5. **name**（给图起名字）
+
+```python
+name="research_agent"
+```
+
+---
+
+###### 6. **store**（存储共享变量，少用）
+
+用于跨会话共享数据。
+
+---
+
+###### 7. **configurable**（动态配置）
+
+让图可以在运行时切换配置。
+
+---
+
+##### 三、你代码里的 2 个参数 **终极总结**
+
+###### ✔ `checkpointer=memory`
+
+**开启状态持久化 = 断点续跑 = 人工介入必须开**
+
+###### ✔ `interrupt_before=["reviewer"]`
+
+**执行到 reviewer 前自动暂停，等人工确认**
+
+---
+
+##### 四、一句话记住
+
+**compile 不是画图，是把图变成可运行的引擎！
+参数 = 给引擎加功能：**
+- **持久化**
+- **人工暂停**
+- **调试**
+- **配置**
 
 ---
 
@@ -3398,6 +3779,284 @@ class State(TypedDict):
     # 日志：自定义合并
     logs: Annotated[list, custom_log_reducer]
 ```
+
+### Map-Reduce
+
+
+
+**State（状态）+ Reducer（合并器）= 就是 Map-Reduce 并行搜索的底层基础！
+没有它们，Map-Reduce 根本跑不起来！**
+
+---
+
+#### 一、先搞懂 3 个东西
+
+1. **State = 存放数据的容器**
+   - `sub_queries`：拆出来的小问题
+   - `search_results`：搜索结果
+
+2. **Reducer = 合并规则（Annotated 里的函数）**
+   - `add_messages`
+   - `operator.add`
+
+3. **Map-Reduce = 并行工作模式**
+   - Map：拆分成多个子任务
+   - Reduce：把多个结果合并成一个
+
+---
+
+#### 二、它们之间的关系（超级关键）
+
+##### **Map-Reduce 必须依赖 State + Reducer 才能实现并行合并**
+
+##### 1. Map 阶段（拆任务）
+
+使用 State 里的：
+```python
+sub_queries: List[str]
+```
+→ 存储拆分后的多个子查询
+
+##### 2. Reduce 阶段（合并结果）
+
+使用 State + Reducer：
+```python
+search_results: Annotated[List[str], operator.add]
+```
+→ **Annotated + operator.add = 真正的合并器（Reducer）**
+→ 多个并行任务的结果**自动合并**
+
+---
+
+#### 三、直接对应你的代码（一看就懂）
+
+##### 这一段代码 **同时包含 State + Reducer + Map-Reduce**
+
+```python
+class AgentState(TypedDict):
+    # Map 阶段：存储拆分后的子查询
+    sub_queries: List[str]
+
+    # Reduce 阶段：存储结果 + 自动合并（Reducer）
+    search_results: Annotated[List[str], operator.add]
+```
+
+##### 对应关系：
+
+- **sub_queries** → Map 用的状态
+- **search_results** → Reduce 用的状态
+- **operator.add** → Reducer（合并器）
+- **整体结构** → 支持 Map-Reduce 并行搜索
+
+---
+
+#### 四、终极结论（必须记住）
+
+##### **你的状态文件（state.py）100% 包含 Map-Reduce 并行搜索的核心机制！**
+
+##### 完整对应：
+
+- **State**：`sub_queries`、`search_results`
+- **Reducer**：`Annotated[..., operator.add]`
+- **Map-Reduce 并行**：拆分子查询 → 并行执行 → 结果合并
+
+**State 存数据，
+Reducer 合数据，
+Map-Reduce 跑并行！
+三者一体，缺一不可！**
+
+### Map-Reduce
+
+**Map-Reduce = 把一个大问题 → 拆成多个小问题 → 同时并行处理 → 最后把结果合并成一个完整答案**
+
+**它的唯一目的：更快、更全地获取信息。**
+
+---
+
+#### 一、先讲大白话比喻
+
+假设用户问：
+**「2025年AI发展趋势 + AgentScope 应用案例」**
+
+你一个人搜索太慢，于是你：
+
+##### 1. Map（拆分任务 = 分配工作）
+
+你把问题**拆成 3 个小问题**，交给 3 个人同时做：
+- 小明：搜 **2025年AI趋势**
+- 小红：搜 **AgentScope功能**
+- 小刚：搜 **多智能体案例**
+
+##### 2. Parallel（并行执行）
+
+3 个人**同时搜索**，不用排队。
+
+##### 3. Reduce（合并结果）
+
+把 3 个人的答案**合并成一篇完整报告**。
+
+这就是 **Map-Reduce**。
+
+---
+
+#### 二、在你的代码里，Map-Reduce 长什么样？
+
+##### 你的代码结构：
+
+```
+用户问题
+   ↓
+generate_queries  【Map 阶段：拆分】
+   ↓
+sub_queries = [
+  "问题1",
+  "问题2",
+  "问题3"
+]
+   ↓
+execute_search    【并行执行】
+   ↓
+search_results   【Reduce 阶段：合并】
+```
+
+---
+
+#### 三、分 3 步彻底拆解你的 Map-Reduce
+
+##### 1. Map 阶段：拆分问题
+
+**谁来做？**
+`generate_queries` 节点
+
+**做什么？**
+把**一个复杂问题 → 拆成多个简单搜索词**
+存入：
+```python
+sub_queries: List[str]
+```
+
+例子：
+```python
+sub_queries = [
+  "2025年AI发展趋势",
+  "AgentScope最新功能",
+  "多智能体落地案例"
+]
+```
+
+---
+
+##### 2. 并行执行阶段
+
+**谁来做？**
+`execute_search` 节点
+
+**做什么？**
+把 sub_queries 里的每个子查询
+**同时、并行、独立搜索**
+
+每个子查询都会创建一个：
+```python
+SubQueryState(query="子问题")
+```
+
+**这就是为什么你需要 SubQueryState！**
+每个子任务独立、不互相干扰。
+
+---
+
+##### 3. Reduce 阶段：合并结果
+
+**谁来做？**
+`search_results` + `operator.add`
+
+**做什么？**
+把 N 个并行搜索结果
+**自动合并成一个大列表**
+
+```python
+search_results: Annotated[List[str], operator.add]
+```
+
+`operator.add` = 自动合并列表
+
+结果：
+```python
+[
+  "AI趋势结果...",
+  "AgentScope结果...",
+  "案例结果..."
+]
+```
+
+---
+
+#### 四、为什么你的代码必须用 Map-Reduce？
+
+##### 1. 速度快（并行 = 同时搜索）
+
+##### 2. 信息更全（多个角度搜索）
+
+##### 3. 复杂问题能回答（单个搜索词不够用）
+
+##### 4. 企业级写作/研究/分析必备
+
+---
+
+#### 五、最关键：**什么时候才会进入 Map-Reduce？**
+
+##### **只有 needs_research = True 才会进入！**
+
+##### 为什么？
+
+因为：
+- **Map-Reduce 是为联网搜索服务的**
+- 不需要联网（简单问题）→ 不需要拆分
+- 需要联网（复杂/最新/外部知识）→ 必须拆分并行
+
+---
+
+#### 六、完整流程图（你代码真实执行路径）
+
+```
+START
+   ↓
+supervisor（判断：needs_research?）
+   ↓
+True → 进入 Map-Reduce
+   ↓
+generate_queries（拆分子问题）
+   ↓
+sub_queries[...]
+   ↓
+execute_search（并行搜索）
+   ↓
+SubQueryState（每个子任务独立）
+   ↓
+search_results（合并所有结果）
+   ↓
+editor（撰写报告）
+   ↓
+reviewer（审核）
+   ↓
+END
+```
+
+---
+
+#### 七、终极极简总结（最核心 3 句话）
+
+1. **Map = 把大问题拆成小问题**
+2. **Parallel = 多个小问题同时搜索**
+3. **Reduce = 把所有结果合并成最终答案**
+
+##### 你的代码中：
+
+- **Map = generate_queries**
+- **Parallel = execute_search**
+- **Reduce = search_results + operator.add**
+- **SubQueryState = 每个子任务的独立状态**
+- **开关 = needs_research**
 
 ---
 
@@ -5134,6 +5793,13 @@ def user_info_tool(config: RunnableConfig) -> str:
     uid = cfg.get("user_id", "匿名用户")
     return f"当前操作用户：{uid}"
 ```
+
+##### `config: RunnableConfig` 作用：
+
+1. **动态获取 LLM 模型**（`get_llm(config)`）
+2. **支持流式输出**（`astream` 必须传）
+3. **携带运行时参数**（模型、温度、请求 ID）
+4. **让整个图可配置、可切换、可监控**
 
 #### 2. 注入工具调用ID InjectedToolCallId
 
