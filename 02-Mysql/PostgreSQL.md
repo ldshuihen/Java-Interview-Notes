@@ -878,7 +878,7 @@ PostgreSQL 本质上是：
 
 的统一底座。
 
-## PostgreSQL 使用教程（从入门到企业开发）
+## PostgreSQL 使用教程
 
 PostgreSQL 的学习建议：
 
@@ -1740,7 +1740,7 @@ PostgreSQL 最核心优势：
 新一代企业级默认数据库
 ```
 
-## Spring Boot 集成 PostgreSQL（完整企业级教程）
+## Spring Boot 集成 PostgreSQL
 
 使用：
 

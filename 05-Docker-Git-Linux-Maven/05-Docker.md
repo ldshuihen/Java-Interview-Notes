@@ -1,8 +1,79 @@
 # Docker
 
-## Dockerfile
+## 一、 环境准备与全局配置：Docker 配置镜像源与加速器
 
-### Dockerfile
+（CentOS Stream 9 / Linux通用）
+
+> 原理：修改 `daemon.json`，配置国内镜像加速器，解决 `docker pull` 超时、下载慢问题
+
+#### 1. 检查是否已有配置文件
+
+```bash
+# 查看文件是否存在
+ls /etc/docker/daemon.json
+```
+- 如果文件不存在：直接新建
+- 如果已经存在：**不要直接覆盖**，把 registry-mirrors 追加进去，防止覆盖原有配置（代理、log等）
+
+#### 2. 编辑 daemon.json
+
+```bash
+vim /etc/docker/daemon.json
+```
+写入下面配置（推荐中科大、网易镜像）
+```json
+{
+  "registry-mirrors": [
+    "https://docker.mirrors.ustc.edu.cn",
+    "https://hub-mirror.c.163.com"
+  ]
+}
+```
+> 可选阿里云镜像：需要登录阿里云控制台获取专属加速地址，格式类似 `https://xxxx.mirror.aliyuncs.com`
+
+#### 3. 重载配置并重启docker（关键步骤，缺一不可）
+
+```bash
+# 重新加载系统服务配置
+systemctl daemon-reload
+
+# 重启docker
+systemctl restart docker
+```
+
+#### 4. 验证镜像源是否生效
+
+```bash
+docker info
+```
+往下找 `Registry Mirrors`，能看到你配置的地址，代表成功。
+
+#### 5. 常见坑
+
+1. **JSON语法错误**：`daemon.json` 必须严格json，不能有多余逗号，否则docker启动失败
+   - 校验json：`cat /etc/docker/daemon.json`
+2. **docker启动失败**
+```bash
+# 查看docker日志排查
+journalctl -u docker
+```
+3. 如果你用的是 `docker-compose`，**不需要单独配置**，compose会复用docker全局镜像源
+
+#### 备选镜像源清单（按需替换）
+
+```json
+"registry-mirrors": [
+  "https://docker.mirrors.ustc.edu.cn",
+  "https://hub-mirror.c.163.com",
+  "https://mirror.baidubce.com"
+]
+```
+
+> ⚠️ 注意：Docker 官方已经不再维护 `docker.io` 的国内免费公共镜像源，部分旧镜像地址会失效，优先用上面中科大、百度云、网易。
+
+---
+
+## 二、 镜像构建与打包：Dockerfile 详解
 
 Dockerfile 是构建 Docker 镜像的**文本蓝图**，由一组按顺序执行的指令组成，每条指令生成一个镜像层，最终打包为可分发的镜像。下面从**基础概念、核心指令、构建流程、多阶段构建、最佳实践、完整示例**六个维度详细介绍。
 
@@ -689,273 +760,339 @@ docker rm my-vue3
 
 需要我帮你适配 **Vite + Vue3** 或 **Vue-CLI** 专属版本吗？
 
-##  docker-compose.yml
+## 三、 多容器编排：Docker Compose 详解
 
-### docker-compose.yml 完全指南
+> 定位：**Docker Compose 是用于定义和运行多容器 Docker 应用的工具**。
+> 一个项目有 MySQL、Redis、Nacos、MinIO、Nginx、Java微服务多个容器时，不用手动敲一堆 `docker run`，全部写在 `docker-compose.yml`，一条命令启停整套服务。
+>
+> ✅ V2：`docker compose`（CLI插件，官方主推，推荐）
+> ✅ V1：`docker-compose`（独立Python程序，已废弃）
 
-`docker-compose.yml` 是 **Docker Compose** 的核心配置文件，用于**一键定义、配置和启动多个 Docker 容器**（比如前端、后端、数据库、Redis 一起启动），替代繁琐的 `docker run` 命令。
+#### 一、核心概念
 
-它使用 **YAML 语法**，文件必须命名为 `docker-compose.yml` 或 `docker-compose.yaml`。
+1. **服务(service)**：一个容器，比如 mysql、redis，对应 yml 里的 `services` 节点
+2. **项目(project)**：compose 管理的整套应用，默认以 yml 所在文件夹名称作为项目名；容器/网络/卷都会带上项目名前缀隔离
+3. **网络(network)**：compose 默认自动创建一个网桥，同一个compose内的容器**可以直接用服务名互相访问**，不需要宿主机IP。例如 java 服务连接 mysql，host直接写 `mysql`，端口写容器内端口 `3306`，不用宿主机映射端口。
+4. **数据卷(volume)**：持久化数据，容器删除数据不丢失；支持命名卷、绑定挂载（宿主机目录映射）
 
----
+#### 二、文件：docker-compose.yml
 
-#### 一、基础结构（必看）
+默认文件名：`docker-compose.yml` 或者 `docker-compose.yaml`
+> 执行命令时默认读取当前目录下这个文件；自定义文件名用 `-f` 指定：`docker compose -f my-compose.yml up -d`
 
-核心层级：
+##### yml 顶层关键字（最常用）
+
 ```yaml
-# 版本（新版 Compose 可省略）
-version: '3.8'
+# 1. 指定compose文件版本（新版compose v2 已经不需要写version，老教程才有）
+# version: '3.8'
 
-# 定义所有服务（容器）
+# 2. 服务列表，核心
 services:
-  服务名称1:
-    配置项: 值
-  服务名称2:
-    配置项: 值
+  mysql:
+    image: mysql:8.0   # 使用镜像；如果是自己构建写 build
+    container_name: mysql8  # 容器名，可选，不写则自动生成【项目名-服务名-序号】
+    restart: always  # 重启策略：always/on-failure/no/unless-stopped
+    ports:
+      - "3306:3306"  # 宿主机端口:容器端口，字符串加引号防止解析错误
+    environment:     # 环境变量
+      MYSQL_ROOT_PASSWORD: root123
+    volumes:
+      - ./mysql-data:/var/lib/mysql  # 绑定挂载：宿主机目录:容器内目录
+      - ./conf/my.cnf:/etc/mysql/my.cnf
+    networks:
+      - my-net # 加入自定义网络
+    depends_on:
+      - redis # 依赖：启动顺序，先启动redis，再启动mysql
+    # depends_on 只保证启动顺序！**不等待应用就绪**（mysql启动进程起来≠数据库可连接），代码里自己做重试！
+    extra_hosts: # 主机映射
+      - "host.docker.internal:host-gateway"
 
-# 可选：数据卷（持久化存储）
+  redis:
+    image: redis:7-alpine
+    networks:
+      - my-net
+
+# 3. 数据卷定义（命名卷）
 volumes:
-  卷名称:
+  mysql-volume:
 
-# 可选：自定义网络
+# 4. 自定义网络
 networks:
-  网络名称:
+  my-net:
+    driver: bridge
 ```
 
----
+##### 关键字详细说明
 
-#### 二、最常用配置项
+1. **image**：拉取已有镜像 `mysql:8.0`
+2. **build**：本地构建镜像（替代image）
+```yaml
+build:
+  context: ./java-app  # Dockerfile所在目录
+  dockerfile: Dockerfile
+```
+3. **restart 重启策略**
+    - `no`：默认，容器退出不重启
+    - `always`：无论怎么退出，永远重启（生产数据库推荐）
+    - `unless-stopped`：除非手动stop，否则一直重启（最常用）
+    - `on-failure`：仅异常退出（返回码非0）才重启
+4. **volumes 两种写法**
+    - 绑定挂载：`./mysql-data:/var/lib/mysql`，宿主机目录，修改宿主机文件容器同步，目录权限坑多
+    - 命名卷：`mysql-volume:/var/lib/mysql`，docker管理，存在docker数据目录，性能更好
+5. **depends_on**
+   
+    > ⚠️ 重点面试坑：**只控制容器启动顺序，不会等待服务就绪**。比如mysql容器进程启动了，但数据库还在初始化，java直接连会报错。解决方案：代码层重试、wait-for-it脚本。
+6. **ports**
+    - `"宿主机IP:宿主机端口:容器端口"` 例如 `"127.0.0.1:3306:3306"` 只允许本机访问
+    - `"3306:3306"` 监听所有网卡
+7. **env_file**：从外部文件加载环境变量，适合配置分离
+```yaml
+env_file:
+  - ./.env
+```
+`.env` 文件：
+```properties
+MYSQL_PWD=root123
+```
+> compose会自动读取当前目录 `.env`，不需要写env_file也会加载。
 
-| 配置项           | 作用                                   |
-| ---------------- | -------------------------------------- |
-| `image`          | 使用的镜像（如 `nginx:alpine`）        |
-| `build`          | 从本地 Dockerfile 构建镜像             |
-| `ports`          | 端口映射 `主机端口:容器端口`           |
-| `volumes`        | 目录/文件挂载（持久化）                |
-| `environment`    | 环境变量                               |
-| `networks`       | 加入自定义网络                         |
-| `depends_on`     | 依赖服务（启动顺序）                   |
-| `restart`        | 重启策略（`always`/`no`/`on-failure`） |
-| `container_name` | 自定义容器名                           |
+#### 三、常用命令（V2版本 `docker compose`）
 
----
+```bash
+# 后台启动所有服务（最常用）
+docker compose up -d
 
-#### 三、实战示例（最常用场景）
+# 前台启动，看日志，调试用
+docker compose up
 
-##### 示例 1：Nginx + MySQL + PHP（Web 环境）
+# 构建镜像并启动（build节点才需要）
+docker compose up -d --build
+
+# 查看运行中的服务状态
+docker compose ps
+
+# 查看日志，实时跟踪
+docker compose logs -f
+
+# 只看mysql服务日志
+docker compose logs -f mysql
+
+# 停止服务，容器保留，数据卷保留
+docker compose stop
+
+# 启动已经停止的服务
+docker compose start
+
+# 停止并且删除容器、默认网络；**数据卷不会删除！**
+docker compose down
+
+# down 同时删除数据卷（谨慎！数据全部清空）
+docker compose down -v
+
+# 重启指定服务，例如只重启mysql
+docker compose restart mysql
+
+# 拉取yml里所有镜像最新版本
+docker compose pull
+
+# 构建镜像，不启动
+docker compose build
+
+# 进入容器内部
+docker compose exec mysql bash
+
+# 查看compose解析后的完整配置（排查yml语法神器）
+docker compose config
+```
+
+#### 四、网络机制（高频面试点）
+
+1. 默认行为：执行 `up`，compose自动创建**项目名_default**网桥，所有service默认加入这个网络。
+2. 同compose内容器，**直接使用服务名作为hostname访问**
+    - java服务连接mysql，host写 `mysql`，端口写容器内端口 `3306`，**不需要宿主机IP，不需要宿主机端口映射**！
+    - 端口映射 `ports` 只有**外部（宿主机/其他机器）访问容器才需要**；容器之间通信不需要ports。
+3. 不同compose项目，默认网络隔离，不能互相访问；如需互通，可以加入同一个自定义network。
+
+#### 五、环境变量 .env 文件
+
+目录结构：
+```
+project/
+├── docker-compose.yml
+└── .env
+```
+`.env`
+```properties
+MYSQL_IMAGE=mysql:8.0
+MYSQL_ROOT_PASSWORD=Root@123456
+MYSQL_PORT=3306
+```
+yml中引用：
+```yaml
+services:
+  mysql:
+    image: ${MYSQL_IMAGE}
+    ports:
+      - "${MYSQL_PORT}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+```
+
+#### 六、compose 部署典型坑点
+
+1. **yml语法严格，缩进是2空格，不能用tab**，写错直接启动失败；`docker compose config` 校验
+2. depends_on 不等待服务就绪，只是容器启动顺序
+3. 绑定挂载宿主机目录权限问题：CentOS Stream9 selinux，目录权限不足，容器无法读写，加 `:z` 标签
+```yaml
+volumes:
+  - ./mysql-data:/var/lib/mysql:z
+```
+4. V1和V2容器命名规则不一样，混用会两套容器，不要交替使用 `docker-compose` 和 `docker compose`
+5. down 默认**不会删除volume**，持久化数据还在；`down -v` 删除卷，谨慎使用
+6. 镜像拉取慢：复用docker全局daemon.json镜像加速器，compose不需要单独配置
+
+#### 七、适用场景 & 不适用场景
+
+✅ 适合：本地开发、测试环境、单机多容器部署（你现在的微服务整套：mysql redis nacos minio nginx）
+❌ **不适合生产集群**：compose只能管理单机容器；多节点集群用 Docker Swarm / K8s
+
+#### 八、示例完整 docker-compose.yml（微服务基础套件，可直接用）
 
 ```yaml
-version: '3.8'
-
 services:
-  # Nginx 服务
-  nginx:
-    image: nginx:alpine
-    container_name: my-nginx
-    ports:
-      - "80:80"          # 主机80 → 容器80
-    volumes:
-      - ./html:/usr/share/nginx/html  # 网站目录挂载
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf
-    restart: always
-    networks:
-      - app-network
-
-  # MySQL 服务
   mysql:
     image: mysql:8.0
-    container_name: my-mysql
+    container_name: mysql8
+    restart: unless-stopped
     ports:
       - "3306:3306"
     environment:
-      MYSQL_ROOT_PASSWORD: 123456   # root 密码
-      MYSQL_DATABASE: mydb         # 自动创建数据库
+      MYSQL_ROOT_PASSWORD: Root@123456
+      MYSQL_DATABASE: demo_db
     volumes:
-      - mysql-data:/var/lib/mysql  # 数据持久化
-    restart: always
+      - ./mysql-data:/var/lib/mysql:z
     networks:
-      - app-network
+      - app-net
 
-# 自定义网络（容器间互通）
-networks:
-  app-network:
-
-# 数据卷（防止数据丢失）
-volumes:
-  mysql-data:
-```
-
-##### 示例 2：单服务（Node.js 应用）
-
-```yaml
-version: '3.8'
-
-services:
-  node-app:
-    build: .                # 从当前目录 Dockerfile 构建
-    container_name: node-app
+  redis:
+    image: redis:7-alpine
+    container_name: redis7
+    restart: unless-stopped
     ports:
-      - "3000:3000"
-    environment:
-      - NODE_ENV=production
-    restart: always
+      - "6379:6379"
+    volumes:
+      - ./redis-data:/data:z
+    networks:
+      - app-net
+
+networks:
+  app-net:
+    driver: bridge
 ```
+
+如果你需要，我可以单独整理一份**Docker Compose面试题精简版**，或者给你一份包含 Nacos、Seata、MinIO、MySQL、Redis、Nginx 的完整可一键部署的 docker-compose.yml。
+
+
+
+
 
 ---
 
-#### 四、常用 Docker Compose 命令
+## 四、 容器网络、端口映射与防火墙机制（含 iptables 避坑）
 
-在**包含 docker-compose.yml 的目录**下执行：
+### （一） 容器端口映射详解（面试与生产实战）
 
+（面试背诵版，适配微服务与容器网络通信场景）
+
+#### 1. 核心概念与工作本质
+容器默认拥有独立的网络命名空间（Network Namespace），**外部不能直接访问容器内部 IP 和端口**。
+端口映射（`-p`）本质：**在宿主机 Linux 内核 iptables 中添加 DNAT 转发规则**，访问宿主机端口时，流量被自动转发到容器内部端口。
+
+> 语法：`-p [宿主机IP:]宿主机端口:容器端口[/协议]`
+> 👉 **顺序：宿主机端口 : 容器端口，千万别写反！面试高频坑**
+
+#### 2. -p 五种常用写法
 ```bash
-# 启动所有服务（-d 后台运行）
-docker-compose up -d
+# 1. 最常用：宿主机8080 → 容器80（0.0.0.0，所有网卡都监听，公网可访问）
+docker run -d -p 8080:80 nginx
 
-# 停止所有服务（不删除容器）
-docker-compose stop
+# 2. 只绑定本机localhost，外部机器访问不了（安全，仅服务器内部访问）
+docker run -d -p 127.0.0.1:8080:80 nginx
 
-# 停止并删除容器、网络
-docker-compose down
+# 3. 随机宿主机端口，容器端口固定
+docker run -d -p 80 nginx
+# 查看自动分配的端口
+docker port 容器名/容器ID
 
-# 查看日志
-docker-compose logs -f
+# 4. 多端口映射，多个-p
+docker run -d -p 8080:80 -p 443:443 nginx
 
-# 重启服务
-docker-compose restart
-
-# 查看运行中的服务
-docker-compose ps
+# 5. 指定udp协议（dns等）
+docker run -d -p 53:53/udp dns
 ```
+
+#### 3. 大写 `-P` 和小写 `-p` 的区别（面试必问）
+- `-p`（小写 publish）：**手动指定宿主机端口:容器端口**
+- `-P`（大写 Publish all）：自动把 Dockerfile 里 `EXPOSE` 声明的所有容器端口，**随机映射到宿主机高位端口（32768起）**
+
+> ⚠️ `EXPOSE 8080` 在 Dockerfile 里**只是元数据注释声明，不会真正开放端口**！
+> EXPOSE 只是告诉别人镜像会用到 8080，**不做端口转发，外部无法访问**；只有 `-p / -P` 才会创建 iptables 转发规则。
+
+#### 4. docker-compose.yml 端口写法（微服务项目实操）
+```yaml
+services:
+  gateway:
+    image: gateway:1.0
+    ports:
+      # 方式1：常用暴露
+      - "8080:8080"
+      # 方式2：仅本机访问
+      # - "127.0.0.1:8080:8080"
+  vue-nginx:
+    image: vue-nginx:1.0
+    ports:
+      - "80:80"
+  service-a:
+    # ❌ 内部业务微服务不需要写 ports！
+    # 网关 gateway 访问 service-a，同一 docker 网络直接通过 service-a:8081 通信，无需端口映射更安全
+```
+
+#### 5. 查看端口映射命令
+```bash
+# 查看容器端口映射
+docker port 容器名称/ID
+
+# 详细信息
+docker inspect 容器名
+```
+
+#### 6. 底层原理（面试口述）
+Docker 启动容器，在宿主机 **iptables 添加 DNAT 转发规则**：
+`访问宿主机 IP:宿主机端口 → NAT 转发 → 容器独立 IP:容器内部端口`。
+> 💡 **微服务通信关键**：同 docker 自定义网络下，**容器之间互相访问不需要端口映射！**
+> 比如 gateway 访问 nacos，直接用容器名+内部端口 `nacos:8848`，不用做 -p 映射。只有**外部（浏览器/宿主机以外机器）访问容器才需要端口映射**。
+
+#### 7. 高频坑点（微服务部署避坑）
+1. **端口写反**：`-p 80:8080` 宿主机 80 转发到容器 8080，不要搞反。
+2. **宿主机端口占用**：宿主机该端口已经被 Nginx/其他程序占用，容器启动失败。
+3. **防火墙/安全组**：端口映射成功，但是云服务器安全组、firewalld 没开放端口，外部访问超时。
+4. **容器内部程序监听地址**：容器内服务必须监听 `0.0.0.0`，不能只监听 127.0.0.1，否则端口映射后外部连不上。
+> 例如 Spring Boot，配置 `server.address=0.0.0.0`，否则容器内部只能本地访问。
+
+#### 8. 面试简答
+* **Q：容器之间通信需要端口映射吗？**
+  
+  > 不需要。在同一个 docker 自定义网络内，容器之间直接通过容器名+内部端口通信，不需要 -p 端口映射。端口映射是给**宿主机外部**访问容器用的。
+* **Q：EXPOSE 和 -p 的区别？**
+  
+  > EXPOSE 只是镜像元数据，仅文档说明，**不产生任何网络转发**；-p 是真正创建 NAT 端口转发，对外开放访问。
+* **Q：为什么 Spring Boot 容器启动，端口映射后访问不通？**
+  
+  > 大概率是 Spring Boot 只监听 127.0.0.1，容器内 127.0.0.1 是容器自身回环，外部无法转发，需要配置监听 0.0.0.0。
 
 ---
 
-#### 五、关键注意事项
-
-1. **缩进严格**：YAML 用 2 个空格缩进（不能用 Tab）
-2. **容器互通**：同一网络下，服务名可直接当域名访问（如 Nginx 访问 MySQL：`mysql:3306`）
-3. **数据持久化**：数据库必须挂载 `volumes`，否则删除容器数据会丢失
-4. **重启策略**：生产环境建议用 `restart: always`
-
----
-
-#### 总结
-
-1. `docker-compose.yml` 用于**批量管理容器**，一键启动整套环境
-2. 核心结构：`services`（容器）+ `volumes`（存储）+ `networks`（网络）
-3. 常用命令：`up -d` 启动、`down` 停止删除、`logs` 查看日志
-4. 生产环境务必做**数据卷挂载**和**自动重启**配置
-
-你需要我根据你的**具体项目**（如 Java/Go/Python/前后端分离）生成专属的 `docker-compose.yml` 吗？
-
-## 防火墙重置后
-
-虚拟机防火墙重置后，**Docker的iptables规则会被清空**，导致容器端口映射、网络转发失效。
-
-### 一、为什么会失效？
-
-- **Docker依赖iptables**：启动时自动创建 `DOCKER`、`DOCKER-USER`、`FORWARD` 等规则
-- **防火墙重置 = 清空iptables**：`firewalld`/`ufw`/`iptables` 重启会清空Docker规则
-- **典型现象**：
-  - 容器端口（`-p 8080:80`）无法访问
-  - 容器间网络不通
-  - 报错：`Failed to Setup IP tables`
-
-### 二、快速恢复（3种方法）
-#### 1. 重启Docker（最常用）
-```bash
-# 重启Docker服务
-sudo systemctl restart docker
-
-# 验证规则是否恢复
-sudo iptables -L -n | grep DOCKER
-```
-- **优点**：一键恢复所有Docker网络规则
-- **缺点**：容器会短暂重启（业务中断）
-
-#### 2. 重载Docker规则（不重启容器）
-```bash
-# 发送SIGHUP信号重载规则（推荐）
-sudo systemctl reload docker
-
-# 或直接给dockerd发信号
-sudo kill -HUP $(pidof dockerd)
-```
-- **优点**：**不中断容器**，仅重建iptables规则
-
-#### 3. 手动修复（适合特殊场景）
-```bash
-# 1. 允许docker0网桥转发
-sudo iptables -A FORWARD -i docker0 -o docker0 -j ACCEPT
-
-# 2. 允许已建立连接
-sudo iptables -A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
-
-# 3. 开放容器端口（示例：8080）
-sudo iptables -A INPUT -p tcp --dport 8080 -j ACCEPT
-```
-
-### 三、永久解决（避免再次失效）
-#### 方案A：Docker管理iptables（推荐）
-1. 确保Docker启用iptables（默认开启）
-```bash
-# 检查
-docker info | grep iptables
-# 输出：iptables: true
-```
-2. 配置防火墙允许Docker规则
-- **firewalld**
-```bash
-# 允许docker0网桥
-sudo firewall-cmd --permanent --add-interface=docker0
-sudo firewall-cmd --permanent --add-masquerade
-sudo firewall-cmd --reload
-```
-- **UFW**
-```bash
-# 允许转发
-sudo ufw allow docker
-sudo ufw allow 8080/tcp
-sudo ufw reload
-```
-
-#### 方案B：禁用Docker管理iptables（手动维护）
-1. 修改Docker配置
-```bash
-sudo vim /etc/docker/daemon.json
-```
-```json
-{
-  "iptables": false
-}
-```
-2. 重启Docker
-```bash
-sudo systemctl restart docker
-```
-3. 手动添加端口规则（示例）
-```bash
-sudo firewall-cmd --add-port=8080/tcp --permanent
-sudo firewall-cmd --reload
-```
-
-### 四、验证与排查
-```bash
-# 1. 查看Docker规则
-sudo iptables -L DOCKER -n
-
-# 2. 查看端口映射
-docker port <容器名>
-
-# 3. 测试连通性
-curl http://虚拟机IP:8080
-```
-
-### 五、总结
-- **临时恢复**：`systemctl restart docker` 或 `reload docker`
-- **永久解决**：**让Docker管理iptables**，防火墙放行docker0
-- **不推荐**：禁用Docker iptables，手动维护规则
-
-## firewalld和docker
+### （二） Docker 与 firewalld 防火墙冲突及失效排查
 
 在 CentOS 7 虚拟机上，**Docker 会自动修改 iptables 规则**，导致 `firewalld` 防火墙对容器端口的限制失效。下面是完整的配置方案，让你能正常控制 Docker 端口访问。
 
@@ -1183,7 +1320,7 @@ firewall-cmd --reload
 
 这里给你整理一份**最常用、最实用的 Docker 命令清单**，按场景分类，新手直接照着用就行！
 
-## Docker 常用命令
+## 五、 Docker 常用命令清单
 
 #### 一、镜像相关（下载、查看、删除）
 
@@ -1198,11 +1335,45 @@ docker images
 
 # 3. 删除本地镜像
 docker rmi 镜像ID/镜像名
+docker rm -f seata-server
 # 例：docker rmi nginx
 
 # 4. 给镜像打标签（改名）
 docker tag 原镜像 新镜像:新标签
 # 例：docker tag nginx nginx:v1
+
+# 一键删除所有 theater 项目容器
+docker rm -f $(docker ps -a | grep theater | awk '{print $1}')
+
+# 执行完查看确认：
+docker ps -a | grep theater
+
+# 顺带清理无用镜像（可选，节省磁盘）,只删带 theater-project 前缀的镜像
+docker rmi -f $(docker images | grep 'theater-project' | awk '{print $2}')
+
+# 一行快速查看所有正在运行容器 + 所属网络
+for c in $(docker ps --format {{.Names}});do echo -n "$c ===> ";docker inspect $c | jq -r '.[0].NetworkSettings.Networks | keys | join(",")';done
+
+
+
+docker run -d \
+--name seata-server \
+--network net-common \
+-p 7091:7091 \
+-p 8091:8091 \
+-e SEATA_PORT=8091 \
+-e STORE_MODE=db \
+-e STORE_DB_DATASOURCE_TYPE=mysql \
+-e STORE_DB_HOST=mysql \
+-e STORE_DB_PORT=3306 \
+-e STORE_DB_DATABASE=seata \
+-e STORE_DB_USER=root \
+-e STORE_DB_PASSWORD="123456" \
+-e SEATA_REGISTRY_TYPE=nacos \
+-e SEATA_NACOS_SERVER_ADDR=nacos:8848 \
+-e SEATA_NACOS_APPLICATION=seata-server \
+-e SEATA_NACOS_GROUP=DEFAULT_GROUP \
+seataio/seata-server:1.5.2
 ```
 
 ---
@@ -1298,7 +1469,61 @@ docker system prune
 - **容器**：运行、停止、进入、删除、看日志
 - 日常开发**记住前 10 条命令**就足够用了
 
-需要我给你做一份**可直接复制的 Docker 速查表（一页版）**吗？
+
+
+
+
+## 六、 docker stats 容器性能监控
+
+```bash
+docker stats
+```
+✅ 作用：**实时监控所有正在运行的容器资源，1秒自动刷新一次，持续滚动**，类似Linux的`top`命令。
+> 按 `Ctrl + C` 退出监控面板。
+
+#### 常用参数
+
+```bash
+# 只看指定容器（你排查seata和pay时用这个最方便）
+docker stats theater-service-pay seata-server
+
+# --no-stream：只输出当前快照，一次性打印，不持续刷新（你之前用的）
+docker stats --no-stream
+
+# -a / --all：包含已经停止的容器（默认只展示running的）
+docker stats -a
+```
+
+#### 输出字段回顾（你最关心）
+
+- `CPU %`：容器CPU使用率；**>100% 代表占用多核**，180%≈占用接近2个CPU核心
+- `MEM USAGE / LIMIT`：容器当前占用内存 / 内存上限（你没做cgroup限制时上限是宿主机全部内存7.5G）
+- `MEM %`：内存占上限百分比
+- `NET I/O`：容器累计网络收发流量
+- `BLOCK I/O`：磁盘读写
+- `PIDS`：容器内部进程数量
+
+#### 两个命令对比
+
+1. `docker stats`：**实时持续刷新**，观察CPU动态变化，看是否持续飙升
+2. `docker stats --no-stream`：**快照，一次采样**，适合多次采样对比、脚本采集
+
+#### 配套排错命令（你微服务环境常备）
+
+```bash
+# 宿主机整机内存
+free -h
+# 宿主机CPU
+top
+# 查看容器日志
+docker logs --tail 300 容器名
+```
+
+> 现在你的故障关键点：把seata-server配置里的mysql地址从`127.0.0.1`改成`mysql:3306`，改完重启seata-server，再用`docker stats`观察它CPU是否下降。
+
+需要我给你一条一键持续监控seata和pay的命令吗？自动每秒刷新，只看这两个容器。
+
+
 
 ## **一、Docker 基础概念**
 
@@ -2843,7 +3068,655 @@ docker run -it --rm --entrypoint /bin/bash <镜像名>
 
 通过以上步骤，可快速定位绝大多数容器启动问题。如果需要具体场景的排查案例（如“Spring Boot 容器因数据库连接失败启动失败”），我可以补充详细的排查流程~
 
-# Docker
+# Docker 面试
+
+全套（后端秋招版）
+
+> 分为：基础概念、镜像&容器、网络、数据持久化、Docker Compose、原理、常见故障、面试简答版、20k+深度定薪专题，适合Java后端。
+> 重点：面试官喜欢对比题（镜像vs容器、docker vs k8s、compose适用场景）、底层坑点（Cgroups与JVM兼容性、写时复制、depends_on、网络模式）
+
+## 一、基础概念
+### 1. 什么是Docker？Docker和虚拟机的区别（高频）
+Docker是**容器化引擎**，基于Linux内核的Namespace、Cgroups，实现资源隔离与限制，打包应用+依赖，做到一次打包到处运行。
+
+| 对比 | Docker容器 | 虚拟机VM |
+|---|---|---|
+| 内核 | 共享宿主机Linux内核 | 独立完整操作系统内核 |
+| 体积 | MB级别，镜像很小 | GB级别 |
+| 启动速度 | 秒级 | 分钟级 |
+| 资源开销 | 低，只隔离进程 | 高，完整模拟硬件 |
+| 隔离级别 | 进程级隔离（Namespace） | 完全硬件隔离 |
+
+> 一句话背诵：虚拟机是**完整操作系统**；容器只是**隔离的进程**，共享宿主机内核。
+
+### 2. 容器和镜像的区别（必问）
+- **镜像（Image）**：只读模板，静态文件包，包含程序、依赖、配置；不能运行，类似安装包。分层只读。
+- **容器（Container）**：镜像运行实例，动态进程；镜像启动时会在最上层加**可写层**。一个镜像可以启动多个容器。
+
+> 类比：镜像=类Class；容器=new出来的实例对象。
+
+### 3. Docker三大核心组件
+1. **镜像 image**：只读分层文件系统
+2. **容器 container**：镜像运行实例
+3. **仓库 registry**：存放镜像（Docker Hub，阿里云镜像仓库）
+
+## 二、镜像原理（面试重点：联合文件系统 UnionFS / COW写时复制）
+### 1. 镜像分层原理
+镜像由**多层只读层叠加**组成。
+- 基础层：操作系统文件（alpine/ubuntu）
+- 上层：安装依赖、复制代码、配置环境
+- 好处：**复用层，节省存储空间**，多个镜像共用基础层，不需要重复下载。
+
+### 2. COW 写时复制 Copy-on-Write（高频）
+镜像所有层都是只读。容器启动时新增一层**可写层**。
+- 读文件：从上往下找，找到第一个存在的文件
+- 修改文件：**不会修改只读镜像层**，把文件复制到顶层可写层，修改副本。底层原文件保持不变。
+> 坑：如果镜像里大文件频繁修改，会每次复制，性能变差。优化：把经常变动的数据放到volume挂载，不要写容器可写层。
+
+### 3. Dockerfile 常用指令 & 镜像优化（Java后端常问）
+```dockerfile
+FROM：基础镜像
+WORKDIR：工作目录
+COPY：复制本地文件到镜像（推荐）
+ADD：类似COPY，额外支持解压tar/远程url
+RUN：构建镜像时执行命令（每一条RUN新增一层！）
+EXPOSE：声明端口，**不实际开放端口，只是文档**
+ENV：设置环境变量
+CMD：容器启动默认命令，会被docker run后面命令覆盖
+ENTRYPOINT：容器入口，不会被覆盖
+```
+✅ 镜像优化要点（面试加分）
+1. 合并多个RUN，减少镜像层数
+2. 选用轻量基础镜像：`openjdk:17-jdk-slim` / alpine，不要用完整版ubuntu
+3. `.dockerignore` 排除无关文件：target、node_modules、日志
+4. 多阶段构建（Java项目强烈推荐）：构建阶段编译打包，最终镜像只保留jar，不带maven/jdk源码，大幅减小镜像体积
+5. **分层缓存优化**：先 `COPY pom.xml` 并下载依赖，再 `COPY src`。这样业务代码修改时，依赖层不会重新下载，直接命中构建缓存，加速构建。
+6. **基础镜像选型**：推荐使用 Alpine 或 Distroless 极简镜像，不选臃肿的 CentOS/Ubuntu，体积小 5~10 倍且攻击面小、安全性高。
+```dockerfile
+# 多阶段构建示例（结合缓存优化）
+FROM maven:3.8-openjdk-17 AS builder
+WORKDIR /app
+# 利用分层缓存：先下依赖再拷代码
+COPY pom.xml .
+RUN mvn dependency:go-offline
+COPY src ./src
+RUN mvn clean package -DskipTests
+
+FROM openjdk:17-jdk-slim
+WORKDIR /app
+COPY --from=builder /app/target/*.jar app.jar
+ENTRYPOINT ["java","-jar","app.jar"]
+```
+
+## 三、容器：Namespace & Cgroups（底层原理，容易深挖）
+> Docker容器隔离底层靠Linux内核两个能力
+1. **Namespace：做资源隔离**（PID、网络、文件系统挂载、用户ID、主机名），容器内看到的资源是独立视图；但是**不能限制资源用量**。
+2. **Cgroups：资源限制**，限制CPU、内存、磁盘IO。可以限制容器最多用多少内存，OOM kill。
+
+> 一句话区分：Namespace **看不见别的进程**；Cgroups **不能超过资源上限**。
+> ⚠️ **高频定薪坑点（Cgroups 与 JVM 兼容性）**：早期 JDK 8（8u131 之前）无法识别 Cgroups 限制，仍按宿主机总内存计算堆大小，导致容器频繁被内核 OOM Killer 杀掉（详见第十二章）。
+
+### 容器生命周期
+`created` → `running` → `paused` → `stopped` → `deleted`
+- `docker run`：创建并启动
+- `docker stop`：优雅关闭，发送SIGTERM信号，等待超时后SIGKILL强制杀进程
+- `docker kill`：直接SIGKILL强制杀死
+
+## 四、数据持久化 Volumes（必考）
+
+容器删除，容器可写层数据会丢失。三种持久化方式：
+1. **Volume 命名卷（推荐）**：Docker管理，宿主机目录在docker数据目录，性能好，权限问题少。`-v mysql-data:/var/lib/mysql`
+2. **Bind Mount 绑定挂载**：宿主机指定目录映射容器目录，`-v ./data:/var/lib/mysql`；适合开发，宿主机直接改文件。CentOS SELinux要加`:z`。
+3. **tmpfs挂载**：数据放在宿主机内存，临时，断电丢失。
+
+> 面试区分：Volume由docker管理；Bind Mount是你自己指定宿主机路径。生产数据库优先Volume。
+
+> 核心前提：容器的**可写层是临时的**，容器删除，可写层数据全部丢失；三种挂载都是把数据放到容器外部实现持久化。
+
+#### 1. Volume 命名卷（生产推荐）
+
+```bash
+# -v简写
+docker run -d --name mysql -v mysql-data:/var/lib/mysql mysql:8
+# --mount显式写法
+docker run -d --name mysql --mount type=volume,source=mysql-data,target=/var/lib/mysql mysql:8
+```
+- 归属：**Docker管理**，卷保存在Docker的数据目录 `/var/lib/docker/volumes/卷名/_data`
+
+- source：**卷名称**，不是宿主机路径
+
+- 创建：`-v`不存在自动创建；`--mount`必须提前`docker volume create`
+
+- 优点：性能好，权限问题少；**容器删除，卷不会自动删除**
+
+- 缺点：宿主机不能直接随意操作底层文件
+
+- 使用场景：数据库(Mysql/Redis)、生产环境
+
+- `source=mysql-data` → 不是路径（没有 `/`、`./`），**是卷名称**。 Docker 会把这个卷存到 Docker 自己管理的目录：`/var/lib/docker/volumes/mysql-data/_data`
+
+  > 这个目录是宿主机磁盘上的目录，只是交给 Docker 管理，**不是内存**。
+
+查看卷真实位置命令：
+
+```
+docker volume inspect mysql-data
+```
+
+输出里面 `Mountpoint` 字段，就是宿主机磁盘路径。
+
+#### 2. Bind Mount 绑定挂载（开发调试）
+
+```bash
+# -v简写
+docker run -d --name mysql -v ./data:/var/lib/mysql:z mysql:8
+# --mount显式写法
+docker run -d --name mysql --mount type=bind,source=$(pwd)/data,target=/var/lib/mysql,z mysql:8
+```
+- 归属：**用户自己管理宿主机目录**
+- source：宿主机**绝对/相对路径**
+- 创建：`-v`宿主机目录不存在会自动创建；`--mount`目录不存在直接报错
+- 优点：宿主机直接修改文件，实时同步到容器（前后端开发挂载代码）
+- 缺点：SELinux容易权限报错；需要自己维护宿主机目录；移植性差
+- 使用场景：本地开发，挂载代码、配置文件
+- `source=./data` → 是宿主机路径（带 `./` / `/`），**用户自己指定的宿主机目录**。 数据就放在你当前目录的 `data` 文件夹，你可以直接进去修改文件。
+
+#### 3. tmpfs 挂载（内存临时存储，不持久）
+
+```bash
+docker run -d --name nginx --mount type=tmpfs,target=/tmpdata,tmpfs-size=50M nginx
+```
+> ⚠️ `-v` 不支持 tmpfs，只能用 `--mount`
+- 归属：宿主机**内存**，不落地磁盘
+- 特点：速度极快；容器停止/宿主机断电，数据直接消失
+- 使用场景：临时敏感数据、缓存，**绝对不能存放业务持久数据**
+
+#### 对比表（面试直接背）
+
+| 类型 | 存储位置 | 管理方 | 持久化 | 典型场景 |
+|---|---|---|---|---|
+| Volume命名卷 | Docker数据目录 | Docker | ✅持久 | 生产数据库 |
+| Bind Mount | 用户指定宿主机目录 | 用户 | ✅持久 | 开发挂载代码 |
+| tmpfs | 宿主机内存 | 内存 | ❌不持久 | 临时缓存、密钥 |
+
+#### 面试高频问答
+
+##### Q1：容器rm之后，Volume和Bind Mount的数据还在吗？
+
+都还在！
+- Volume：`docker rm 容器` 不会删卷；只有 `docker volume rm 卷名` / `docker rm -v 容器` 才删除卷。
+- Bind Mount：数据在宿主机文件夹，删容器完全不影响宿主机文件。
+
+##### Q2：Volume 和 Bind Mount 核心区别一句话？
+
+**Volume由Docker管理存储目录；Bind Mount是用户指定宿主机已有目录映射到容器。**
+
+##### Q3：什么时候用:z？
+
+CentOS / RHEL / Stream9 SELinux开启环境，使用Bind Mount时，宿主机目录权限被SELinux拦截，加上`:z`给目录打标签，允许多容器读写。
+
+##### Q4：tmpfs为什么不能存业务数据？
+
+数据放在内存，宿主机重启、容器销毁，数据全部丢失，只适合临时数据。
+
+#### Compose yaml 三种写法示例
+
+```yaml
+services:
+  mysql:
+    image: mysql:8
+    volumes:
+      # 1. Volume命名卷
+      - mysql-data:/var/lib/mysql
+      # 2. Bind Mount
+      # - ./data:/var/lib/mysql:z
+      # 3. tmpfs (不能写在volumes下，单独写tmpfs)
+    # tmpfs:
+    #   - /tmpdata:size=50M
+
+volumes:
+  mysql-data: # 声明命名卷
+```
+
+要不要我出2道面试真题（简答+选择题）自测一下这个知识点？
+
+
+
+## 五、Docker网络（高频面试）
+Docker 内置5种网络驱动：
+1. **bridge（默认）**：桥接网络。宿主机docker0网桥。容器默认接入bridge。容器之间通过容器IP通信。
+2. **host**：共享宿主机网络栈，**没有端口映射**，容器直接使用宿主机端口；性能最高；隔离差。适合监控组件。
+3. **none**：无网络，完全隔离。
+4. **container**：复用另一个容器网络。比如nginx容器共享pod网络。
+5. **自定义bridge**（compose默认）：同一个自定义bridge里，**可以用服务名/容器名DNS互相访问**。不同自定义bridge网络隔离。
+
+> Compose网络面试坑：
+> compose会自动创建自定义bridge；同一compose服务之间通信**不需要端口映射ports**，ports只用于宿主机访问容器。
+
+## 六、Docker Compose 面试专题（你前面问的，必背）
+
+1. **Compose作用**：单机多容器编排工具，用yaml定义多个服务，一条命令管理整套应用。本地开发、测试环境。**不能用于集群生产环境，集群用K8s**。
+2. V1 `docker-compose`（python，废弃） vs V2 `docker compose`（cli插件，官方推荐）。
+3. `depends_on`：**只保证容器启动顺序，不保证应用就绪**。例如mysql容器进程启动成功，但数据库还没初始化完毕，java服务直接连接报错。解决方案：代码重试、wait-for-it脚本。
+4. 常用命令：`up -d`后台启动；`down`删除容器网络，**默认不删除volume；down -v 删除卷**。
+5. `.env`：compose自动读取当前目录.env环境变量。yml中 `${变量名}` 引用。
+
+## 七、Docker镜像加速 & 常见问题
+1. 镜像加速器：修改 `/etc/docker/daemon.json` 配置 `registry-mirrors`，`daemon-reload && restart docker`。`docker info` 验证。
+2. daemon.json 语法错误，docker启动失败，JSON不能多余逗号。
+
+## 八、Docker 与 K8s区别（经常追问）
+- Docker：打包镜像、单机容器管理；Compose：单机多容器编排。
+- K8s：多节点集群编排，负责容器调度、自愈、扩缩容、负载均衡。
+> 一句话：Docker是容器引擎；K8s是容器集群管理平台。compose只能单机。
+
+## 九、Docker线上故障排查（后端面试加分项）
+1. 容器启动失败：`docker logs 容器id` 看日志
+2. 进入容器：`docker exec -it xxx bash`；容器没启动exec进不去，只能看logs
+3. 查看容器资源占用：`docker stats`
+4. 容器OOM：dmesg 查看内核OOM日志，检查内存限制
+
+## 十、精简简答版（面试口述，1分钟版）
+> 适合一面口述，直接背
+Docker是容器化技术，基于Linux Namespace隔离、Cgroups限制资源。镜像是只读分层模板，容器是镜像运行实例。写时复制COW，修改文件复制到可写层。持久化三种方式volume、bind mount、tmpfs。网络默认bridge，自定义bridge支持服务名DNS通信。Docker Compose单机多容器编排，适合开发测试，depends_on只控制容器启动顺序，不等待服务就绪。容器共享宿主机内核，比虚拟机轻量。集群部署使用K8s。
+
+## 十一、面试坑题集合（容易踩坑）
+1. EXPOSE 会开放端口吗？❌ 只是声明，不实际暴露。端口映射靠 `-p`。
+2. docker run 不加-p，容器外部能访问吗？宿主机外不行；同一网络内其他容器可以访问。
+3. docker down 会删除数据卷吗？❌ 默认不会，`down -v` 才删除。
+4. 容器删除，volume数据还在吗？✅ volume独立于容器。
+5. Docker容器是虚拟机吗？❌ 不是，只是隔离进程。
+
+---
+
+## 十二、20k+ Docker 核心考察点（Java 生产避坑与高频真题精炼版）
+
+> **🎯 考察定位与定薪分水岭**：
+> 面试官**不会把你当成运维工程师（SRE）来考**（不要求背诵冷门 Linux 内核参数或复杂安全配置）。
+> 核心考察的是：**Java 进程在容器环境下的底层行为特征（内存/CPU/线程/信号）、高并发与云原生下的隐藏陷阱、Dockerfile 生产级工业规范，以及遇到线上容器崩溃或发版抖动时的排查能力**。
+
+---
+
+### 一、 JVM 与容器资源隔离冲突（定薪核心·必问）
+
+#### 1. 容器内存超限被杀（ExitCode 137 与 JVM RSS 真实全景）
+* **面试官提问：** “把 Java 应用打包进 Docker，限制容器内存 1G，运行时经常被杀掉（ExitCode 137），且**没有任何 Java OOM Dump 日志**；后来我升级了高版本 JDK 并把堆设为 750M，为什么高并发期依然被杀？”
+* **20k+ 答题要点（直击底层）：**
+  * **为什么退出码是 137？**
+    Linux 内核强杀信号为 `SIGKILL (kill -9)`。Docker 容器退出码规则是 `128 + 信号值 = 128 + 9 = 137`。因为是内核暴力杀进程，JVM 根本来不及抛出 `OutOfMemoryError`，更来不及触发 `-XX:+HeapDumpOnOutOfMemoryError`。
+  * **为什么早期 JDK 8 会直接挂？**
+    早期 JDK 8（8u131 之前）不感知 Cgroups 限制，它看到的是宿主机物理内存（如 64G），默认按 1/4 计算最大堆（16G），直接远超容器 1G 限制，启动稍有负载即被内核杀掉。
+  * **为什么堆设 75% 依然可能被杀？（JVM 实际物理内存 RSS 结构）**
+    **核心误区**：容器内存超限检测的是进程的 **RSS（实际物理内存占用）**，而**不仅是堆内存（Heap）**！
+    $$\text{JVM 物理内存 (RSS)} = \text{堆内存 (Heap)} + \text{元空间 (Metaspace)} + (\text{线程栈} \times \text{线程数}) + \text{堆外直接内存 (DirectMemory)} + \text{JVM 自身开销}$$
+    - **线程栈消耗**：64 位系统每个线程默认占 1MB 物理栈空间（`-Xss1m`）。若业务线程池+框架线程达到 300 个，直接吃掉 300MB 物理内存！
+    - **堆外直接内存**：Netty / gRPC 大量使用堆外零拷贝，若高并发缓冲未及时回收，轻松吃掉几百 MB；
+    - **结论**：堆占 750MB + 线程栈 200MB + 元空间 150MB = 1.1GB，瞬间打爆容器 1G 限制！
+  * **生产防护标准**：
+    - 容器内存配额必须给堆外留出 **25%~30% 的安全缓冲垫**；
+    - 在 JVM 参数中显式收敛非堆区域：`-XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=256m -Xss512k`。
+
+#### 2. CPU 核心数误判与线程池爆炸陷阱
+* **面试官提问：** “Docker 限制了 `--cpus=2`，为什么应用启动后线程数暴增到几百个，CPU 经常被耗尽，且接口响应时间（RT）严重抖动？”
+* **20k+ 答题要点：**
+  * **误判机理**：`Runtime.getRuntime().availableProcessors()` 在未开启容器感知的环境下，读取的是宿主机物理核心数（如 64 核）。
+  * **连锁反应**：Netty Worker 线程数（默认 `核数 * 2`）、ForkJoinPool（默认 `核数 - 1`）、Tomcat 连接池等均按照 64 核创建数百个线程。
+  * **后果**：只有 2 核算力却有几百个线程剧烈争抢，导致**极度频繁的上下文切换（Context Switch）**，CPU 时间大量浪费在内核调度上。同时触发 Linux CFS Quota 限额节流（CPU Throttling 冻结），导致接口 RT 阶梯式暴增。
+  * **生产解决**：在 JVM 启动参数显式固定核数：`-XX:ActiveProcessorCount=2`，并严格收敛自定义业务线程池的最大线程数。
+
+#### 3. 容器 JVM 启动参数黄金模板（标准工业版）
+```bash
+java \
+  -XX:+UseContainerSupport \
+  -XX:InitialRAMPercentage=70.0 \
+  -XX:MaxRAMPercentage=70.0 \
+  -XX:MinRAMPercentage=70.0 \
+  -XX:ActiveProcessorCount=2 \
+  -XX:MaxMetaspaceSize=256m \
+  -XX:MaxDirectMemorySize=256m \
+  -Xss512k \
+  -Dsun.net.inetaddr.ttl=10 \
+  -Dfile.encoding=UTF-8 \
+  -XX:+ExitOnOutOfMemoryError \
+  -XX:+HeapDumpOnOutOfMemoryError \
+  -XX:HeapDumpPath=/data/logs/dump/ \
+  -jar app.jar
+```
+> **一句话亮点**：三核统一百分比（Initial = Max = Min = 70%）取代写死 `-Xms/-Xmx`，保证镜像在不同规格容器间灵活移植，同时避免内存动态伸缩引发的 GC 抖动；配合 `-XX:+ExitOnOutOfMemoryError` 确保发生 Java OOM 时快速退出自愈。
+
+---
+
+### 二、 容器生命周期与优雅停机（高可用核心·必问）
+
+#### 1. PID 1 信号阻断陷阱（Shell 格式 vs Exec 格式）
+* **面试官提问：** “服务发版执行 `docker stop` 时，为什么 Spring Boot 配置的 `server.shutdown=graceful` 完全无效，在途请求直接报 502/连接断开？”
+* **20k+ 答题要点：**
+  * **核心根因**：Dockerfile 中启动命令写成了 **Shell 格式**：
+    
+    ```dockerfile
+    # ❌ 错误写法（Shell 格式）
+    ENTRYPOINT java -jar app.jar
+    ```
+    Docker 底层会将其包装为 `/bin/sh -c "java -jar app.jar"` 执行。此时容器内的 **PID 1 是 `/bin/sh`**，Java 进程只是其子进程。当 Docker 发送 `SIGTERM (15)` 停机信号时，**`/bin/sh` 默认不转发信号给子进程**！Java 进程收不到信号，根本不会执行优雅停机。等待 10 秒超时后，Docker 直接发送 `SIGKILL (9)` 强杀容器。
+  * **生产标准解法**：必须使用 **Exec 格式（JSON 数组语法）**：
+    ```dockerfile
+    # ✅ 正确写法（Exec 格式）
+    ENTRYPOINT ["java", "-jar", "app.jar"]
+    ```
+    此时 Java 进程直接作为 PID 1 启动，能原生捕获 `SIGTERM` 信号，顺利触发 Spring Boot `ShutdownHook` 完成在途请求处理后再退出。
+
+#### 2. 生产发版“零抖动”完整保障链路
+* **完整闭环（口述链路）**：
+  1. **注册中心下线/摘除节点**：K8s / Nginx 停止向当前容器路由新流量；
+  2. **延时等待断流**：配置延时钩子（如 K8s `preStop: sleep 10`），给上游网关留出同步摘除 Endpoints 的时间，彻底截断新流量；
+  3. **应用优雅停机**：Java 接收到 `SIGTERM`，拒绝新请求，处理完正在执行的在途请求并释放连接池；
+  4. **超时兜底强杀**：若超过超时时间（如 30s），再由底层执行 `SIGKILL`。
+
+---
+
+### 三、 Dockerfile 工程化与镜像构建最佳实践（实操核心·必问）
+
+#### 1. Spring Boot 2.3+ Layered Jar（分层 Jar 构建加速）
+* **面试官提问：** “每次改动一行业务代码，打出来的镜像都要重新上传 100MB+ 到仓库，CI/CD 流水线极慢，怎么优化？”
+* **20k+ 答题要点：**
+  * **传统痛点**：单体 Fat Jar 把第三方依赖与业务代码打包在一起，改动一行业务代码会导致整个 Jar 的哈希改变，Docker 无法复用层缓存。
+  * **分层打包解法**：利用 Spring Boot 官方 `jarmode=layertools` 将 Jar 拆解为 4 层：`dependencies`（依赖，极少变）、`spring-boot-loader`、`snapshot-dependencies`、`application`（业务代码，频繁变）。
+  * **生产 Dockerfile 模板**：
+    ```dockerfile
+    # 阶段一：解构分层
+    FROM eclipse-temurin:17-jre-jammy AS extractor
+    WORKDIR /builder
+    COPY target/app.jar app.jar
+    RUN java -Djarmode=layertools -jar app.jar extract
+
+    # 阶段二：按变动频率顺序复制（利用 Docker Layer 缓存）
+    FROM eclipse-temurin:17-jre-jammy
+    WORKDIR /app
+    COPY --from=extractor /builder/dependencies/ ./
+    COPY --from=extractor /builder/spring-boot-loader/ ./
+    COPY --from=extractor /builder/snapshot-dependencies/ ./
+    COPY --from=extractor /builder/application/ ./
+
+    EXPOSE 8080
+    ENTRYPOINT ["java", "org.springframework.boot.loader.launch.JarLauncher"]
+    ```
+  * **收益**：改动业务代码时，前 3 层完全命中远程与本地缓存，**每次只构建和推送不到 5MB 的 application 层**，构建速度从几分钟降至 10 秒以内。
+
+#### 2. 基础镜像选型权衡：为什么生产谨慎使用 Alpine？
+* **面试官提问：** “Alpine 镜像体积只有几兆，为什么你们生产环境没有选用 Alpine 作为 Java 基础镜像？”
+* **20k+ 答题要点（真实踩坑经验）：**
+  * **C 库差异（musl libc vs glibc）**：Alpine 使用 musl libc，不是标准的 glibc。
+  * **三大暗坑**：
+    1. **排查利器失效**：诊断工具 **Arthas**、`async-profiler` 以及部分依赖 JNI 的 Native 库（如 snappy 压缩、rocksdb）在 musl 下容易崩溃或无法 attach；
+    2. **中文字体与图形缺失**：Alpine 极简镜像缺少中文字体库与 fontconfig，Java 导出 Excel（POI/EasyExcel）或生成图形验证码时直接抛空指针 `FontConfiguration` 异常；
+    3. **时区问题**：默认 UTC，需要额外安装 tzdata 配置上海时区。
+  * **生产选型结论**：选用 **Debian / Ubuntu Slim 版本**（如 `eclipse-temurin:17-jre-jammy`），体积约 150MB~200MB，兼顾轻量与完整的 glibc 生产排查兼容性。
+
+---
+
+### 四、 JDK 17 / Spring Boot 3 容器化新特性与踩坑（前沿标配）
+
+#### 1. 模块化强封装反射报错（`--add-opens` 生产注入）
+* **现象与报错**：Spring Boot 3 / JDK 17 容器启动时，若引入了旧版 MyBatis、CGLIB、MapStruct、Jackson 或反射工具类，常报错：
+  `InaccessibleObjectException: Unable to make field private accessible: module java.base does not "opens java.lang"`
+* **原因**：JDK 17 默认开启强封装（JEP 403），禁止通过反射绕过权限访问核心类的私有字段。
+* **解决**：在容器启动脚本中显式配置开放反射白名单：
+  ```bash
+  --add-opens java.base/java.lang=ALL-UNNAMED \
+  --add-opens java.base/java.lang.reflect=ALL-UNNAMED \
+  --add-opens java.base/java.util=ALL-UNNAMED
+  ```
+
+#### 2. G1 GC 在小规格容器中的“内存刺客”陷阱
+* **现象**：在 1C/1G 或 1C/2G 的小容器里跑 JDK 17，即使堆设了 70%，容器仍偶发被内核 OOM Killer 强杀。
+* **底层原因**：JDK 17 默认使用 G1 GC。G1 为了维护跨 Region 引用关系，内部维护的 **RSet（Remembered Set）与 Card Table 会额外占用堆大小 10%~15% 的堆外本地内存**。小容器本身堆外预算非常紧张，很容易被堆外开销挤爆。
+* **生产建议**：
+  - 1G~2G 小规格容器：建议将堆内存占比压低至 60%（`-XX:MaxRAMPercentage=60.0`），或评估改用轻量收集器 `-XX:+UseParallelGC`；
+  - 4G 及以上规格容器：保持 G1 GC 默认配置，低延迟性能最佳。
+
+---
+
+### 五、 微服务容器网络通信陷阱（高频常识）
+
+#### 1. 为什么微服务容器间调用严禁使用 `-p` 宿主机端口映射？
+* **面试官提问：** “同主机或者同一网络下的两个微服务容器相互调用，能不能直接用宿主机 IP + `-p` 映射的端口访问？生产规范为什么禁止这样做？”
+* **20k+ 答题要点：**
+  * **网络损耗**：走宿主机 IP + `-p` 端口映射，流量必须经过 Linux 内核的 **iptables DNAT/SNAT 网络地址转换**，多了一层网络虚拟化栈的封装与解封，在高并发下会造成明显的网络延迟和宿主机软中断（softirq）升高；
+  * **端口冲突与维护成本**：如果使用 `-p`，每一个微服务都必须抢占宿主机的一个物理端口，无法利用容器的端口隔离特性（两个服务不能同时绑定 8080）；
+  * **生产正确做法**：微服务必须统一接入同一个自定义 Bridge 网络，**直接通过容器名或服务名通信（如 `http://order-service:8080`）**。Docker 内部集成了轻量级 DNS 服务，自动将容器名解析为内网容器 IP，完全在 Linux 虚拟网桥（docker0 或 br-xxx）内二层直接转发，零 NAT 额外损耗。
+
+#### 2. 容器 IP 动态漂移与 JVM DNS 缓存（TTL）死穴
+* **面试官提问：** “下游容器故障重启或重新发布后分配了新容器 IP，为什么上游 Java 微服务一直在报 `Connection Refused`，重启上游服务后才恢复？”
+* **20k+ 答题要点：**
+  * **根因**：Java JVM 默认的 DNS 解析策略为了提高性能，在部分配置下会将域名解析结果**永久缓存（TTL = -1）**。当下游容器销毁重建、Docker DNS 虽已更新为新 IP，但上游 Java 进程内部的 InetAddress 缓存永远不失效，依然往死掉的旧 IP 发送 TCP 请求。
+  * **生产标准解法**：在 Java 容器启动参数中显式缩短 DNS 缓存生存时间：
+    ```bash
+    -Dsun.net.inetaddr.ttl=10
+    ```
+    强制 JVM 每 10 秒刷新一次 DNS 解析结果，完美应对微服务容器动态伸缩与漂移。
+
+---
+
+### 六、 现场答辩必备：两大高频真实故障排查故事（直接背诵）
+
+#### 故事一：线上 Java 容器频发 ExitCode 137 异常重启排查
+* **现象**：
+  
+  > “我们核心订单服务在促销高峰期偶发性重启。查看容器状态，退出码为 `137`，但是业务日志和 JVM 都没有生成任何 `OutOfMemoryError` 堆 Dump 文件。”
+* **排查链路**：
+  > “1. 退出码 137 说明容器收到了 `SIGKILL` 强杀信号。我登录宿主机执行 `dmesg -T | grep -i oom`，明确看到内核日志记录了 `Memory cgroup out of memory: Kill process (java)`，证实是触发了内核的 OOM Killer。
+  > 2. 进一步排查 JVM 内存配置，虽然堆内存限制为容器的 75%，但通过监控发现该服务集成了 Netty 堆外通信，且异步线程池创建了 300 多个线程（每个线程栈占 1MB）。堆内存（75%）+ 线程栈（300MB）+ 堆外直接内存 突破了容器配额。
+  > 3. **解决方案**：我们将基础镜像升级为支持容器感知的 JDK 17，将堆内存百分比调整为 70%（预留 30% 安全缓冲），并显式限制 `-Xss512k -XX:MaxDirectMemorySize=256m`。调整后高峰期内存稳定在容器限额的 85% 以内，彻底根治了偶发重启。”
+
+#### 故事二：发版滚动更新时接口短暂报 502 排查与优雅停机
+* **现象**：
+  
+  > “我们在自动化流水线滚动部署新版本时，网关在发版瞬间会出现短暂几秒的 502 Bad Gateway 和连接重置异常。”
+* **排查链路**：
+  > “1. 检查了 Spring Boot 配置，确认已经开启了 `server.shutdown=graceful`，但发版依然报错，说明应用没有完成优雅停机就被杀死了。
+  > 2. 检查 Dockerfile 发现启动命令写成了 Shell 格式：`ENTRYPOINT java -jar app.jar`。进入容器执行 `ps -ef` 查看，发现 PID 1 是 `/bin/sh`，Java 进程是 PID 7。因为 `/bin/sh` 不转发 `SIGTERM` 信号，Docker 等待 10 秒超时后直接发送 `SIGKILL` 强杀容器，导致在途请求被粗暴掐断。
+  > 3. **解决方案**：将 Dockerfile 改为 Exec 格式 `ENTRYPOINT ["java", "-jar", "app.jar"]`，使 Java 进程直接成为 PID 1；同时在容器销毁前增加 10 秒延时断流（如 K8s preStop 钩子 `sleep 10`），给上游网关留出摘除路由的时间。改动后实现了发版过程 0 报错平滑过渡。”
+
+---
+
+### 七、 20k+ 必考综合实战：4核8G 资源受限下 Docker 架构部署与极致优化（内存+磁盘压榨指南）
+
+> **💡 面试官核心动机**：
+> “4核8G（4C8G）”是云厂商最主流的高性价比 ECS/CVM 规格，几乎所有中小企业、初创团队、测试预发环境或边缘微服务节点都在使用。
+> 面试官抛出这道题，**绝不是考简单的启动命令，而是考察你的工程容量规划能力（Capacity Planning）、技术成本意识（降本增效）、以及在资源紧绷环境下保证系统不 OOM、磁盘不爆盘的实战防护功底**。
+
+#### 1. 业务场景规划：4C8G 容器容量配额矩阵（严禁超卖）
+
+假设要在单台 4C8G 服务器上通过 Docker 跑一套完整的最小闭环业务系统（**Nginx + Spring Cloud Gateway + 核心业务服务 + MySQL 8.0 + Redis 7.0**）：
+
+| 容器组件 | CPU 限制 (`--cpus`) | 内存硬限制 (`-m`) | 核心参数/关键配置 | 规划设计依据 |
+| :--- | :--- | :--- | :--- | :--- |
+| **宿主机 OS & Docker 守护进程** | 留底 0.5 核 (突发) | **预留 1.5GB** | 保留给 Linux 内核、SSH、监控 Agent、page cache | **防死底线**：严禁把 8G 内存全分完，否则宿主机内核 OOM 崩溃，连 SSH 都登不进去 |
+| **MySQL 8.0** | 1.0 核 | **1.5GB** | `innodb_buffer_pool_size=1G`<br>`max_connections=150` | 默认参数会吃 2G+，必须调小 buffer pool 并限制最大连接数 |
+| **Redis 7.0** | 0.5 核 | **512MB** | `maxmemory 400mb`<br>`maxmemory-policy allkeys-lru` | 强制限定最大内存与淘汰策略，防止未设限无底线吃光宿主机内存 |
+| **Spring Cloud Gateway** | 0.5 核 | **800MB** | `-XX:MaxRAMPercentage=65.0`<br>`-Xss256k` | 基于 Netty 响应式轻量路由，主要消耗堆外直接内存，堆分配 500M 足够 |
+| **Core Service (核心业务应用)** | 1.5 核 | **3.5GB** | `-XX:MaxRAMPercentage=65.0`<br>`-Xss512k`<br>`-XX:MaxMetaspaceSize=256m` | 核心业务承载，堆内存约 2.3G，留出 1.2G 给元空间、线程栈与框架堆外开销 |
+| **Nginx (前端静态托管+反代)** | 0.2 核 | **200MB** | `worker_processes 2;`<br>`worker_connections 1024;` | 极度轻量，主要支撑静态资源缓存与 SSL 卸载 |
+| **总计规划** | **4.2 核 (时分复用)** | **8.0 GB (严密平衡)** | 各组件均配置明确资源配额（`resources.limits`） | 杜绝任意单个容器发生内存泄漏拖死整台服务器 |
+
+##### 附：4C8G 标准生产编排模板 (`docker-compose.yml`)
+```yaml
+version: '3.8'
+
+services:
+  core-service:
+    image: myrepo/core-service:v1.0
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 3500M
+        reservations:
+          cpus: '0.5'
+          memory: 1500M
+    environment:
+      - JAVA_OPTS=-XX:+UseContainerSupport -XX:MaxRAMPercentage=65.0 -Xss512k -XX:MaxMetaspaceSize=256m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+    depends_on:
+      - mysql
+      - redis
+
+  mysql:
+    image: mysql:8.0-debian
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1500M
+    command: --innodb_buffer_pool_size=1G --max_connections=150
+    volumes:
+      - /data/mysql/data:/var/lib/mysql
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    command: redis-server --maxmemory 400mb --maxmemory-policy allkeys-lru
+```
+
+---
+
+#### 2. 如何极致节省「内存空间」？（JVM 与中间件双向压榨）
+
+##### ① JVM 层面四重内存瘦身
+1. **精准控制 RAMPercentage，预留足量堆外安全垫**：
+   - 4C8G 环境下单个 Java 容器内存上限通常在 1G~3.5G 之间。
+   - 配置 `-XX:MaxRAMPercentage=65.0`（而不是盲目的 75% 或 80%），硬性预留 35% 堆外物理内存给元空间、线程栈和框架 DirectMemory，从根源杜绝 ExitCode 137 内核强杀。
+2. **压缩线程栈空间（降低 50%+ 物理占用）**：
+   - 默认 64 位 JVM 每个线程栈占 1MB（`-Xss1m`）。若应用线程池包含 200 个线程，启动就霸占 200MB 物理内存！
+   - 配置 `-Xss256k` 或 `-Xss512k`。对于一般的 Spring Boot 业务代码，512k 甚至 256k 深度完全不会引起 `StackOverflowError`，却能**瞬间释放 100MB~150MB 物理常驻内存**。
+3. **GC 收集器精打细算（拒绝无脑用 G1）**：
+   - **核心认知**：G1 GC 的跨 Region 记忆集（RSet）本身会额外霸占堆大小 **10%~15% 的堆外内存**。
+   - **选型策略**：
+     - 若给容器分配内存 **>= 3GB**（如核心服务）：使用默认 G1 GC，享受高并发低停顿优势；
+     - 若给容器分配内存 **<= 1.5GB**（如网关或小服务）：建议显式配置 `-XX:+UseParallelGC` 或 `-XX:+UseSerialGC`，直接省掉 G1 RSet 的 150MB~200MB 堆外额外内存负担，启动速度更快！
+4. **Spring Boot 框架级轻量化**：
+   - 在 `application.properties` 中开启组件懒加载：
+     ```properties
+     spring.main.lazy-initialization=true
+     ```
+     让 Bean 在首次被调用时才初始化，不仅大幅加快启动速度，还能**直接削减 20%~30% 的常驻启动内存**。
+
+##### ② 核心中间件内存强制锁定
+1. **MySQL 内存防暴增**：
+   - 挂载自定义 `my.cnf`，强制约束：
+     ```ini
+     [mysqld]
+     innodb_buffer_pool_size = 1G
+     innodb_log_buffer_size = 16M
+     max_connections = 150
+     table_open_cache = 400
+     ```
+2. **Redis 内存防失控**：
+   - 必须在启动参数或配置文件中限制内存，绝不允许无上限运行：
+     ```bash
+     docker run -d --name redis -m 512m redis:7-alpine \
+       redis-server --maxmemory 400mb --maxmemory-policy allkeys-lru
+     ```
+
+##### ③ 宿主机 Linux 内核两项关键防死调优
+1. **防止 Redis BGSAVE Fork 失败 (`vm.overcommit_memory = 1`)**：
+   - 在 4C8G 紧绷内存下，Redis 进行 RDB/AOF 重写时会 `fork()` 子进程。Linux 默认 `vm.overcommit_memory = 0` 会按悲观算法检查申请内存，导致 Redis 报错 `Can't save in background: fork: Cannot allocate memory`。
+   - **优化**：在宿主机 `/etc/sysctl.conf` 配置 `vm.overcommit_memory = 1`。
+2. **避免 JVM 堆内存被置换到 Swap 盘 (`vm.swappiness = 1`)**：
+   - 若 Linux 开启了 Swap 且 swappiness 保持默认 60，内核在内存吃紧时会把 JVM 不活跃的堆页面写入 Swap 磁盘。一旦 GC 扫描到 Swap 页面，会引发海量磁盘 I/O 等待，导致 **GC STW 卡顿由毫秒级暴增到数十秒**！
+   - **优化**：配置 `vm.swappiness = 1`，优先回收 Page Cache，宁死不将 Java 堆交换到磁盘。
+
+---
+
+#### 3. 如何极致节省「磁盘空间」？（Docker 生产防爆盘四板斧）
+
+很多线上故障不是 CPU 内存满了，而是 **Docker 运行一段时间后磁盘 100% 暴毙**，导致 MySQL 无法写入事务日志而宕机。
+
+##### ① 第一板斧：全局日志限流轮转（防范最致命的隐形炸弹）
+* **痛点**：Docker 默认的 `json-file` 日志驱动**不限制单文件大小**，容器内的 `stdout` 会无休止写入，几天即可跑出几十 GB 的大日志直接撑爆宿主机磁盘。
+* **全局根治配置**：修改宿主机 `/etc/docker/daemon.json` 并重启 Docker：
+  ```json
+  {
+    "log-driver": "json-file",
+    "log-opts": {
+      "max-size": "50m",
+      "max-file": "3"
+    }
+  }
+  ```
+  单个容器日志上限严格锁定为 `50MB * 3 = 150MB`，超额自动滚动覆盖，全机所有容器彻底杜绝日志爆盘。
+
+##### ② 第二板斧：Dockerfile 极简化与构建层瘦身
+1. **基础镜像选型**：
+   
+   - 选用 Debian Slim 或 Alpine（如 `eclipse-temurin:17-jre-jammy`），体积由 Ubuntu/CentOS 的 500MB 降至 150MB 左右；
+2. **合并 RUN 命令并即时清理缓存**：
+   ```dockerfile
+   # ❌ 错误做法：每一条 RUN 都会独立生成一层持久只读层
+   RUN apt-get update
+   RUN apt-get install -y curl
+   
+   # ✅ 正确做法：合并命令，且在同一层内彻底删除安装包缓存
+   RUN apt-get update && apt-get install -y --no-install-recommends curl \
+       && apt-get clean \
+       && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+   ```
+3. **引入 `.dockerignore`**：
+   
+   - 在 Dockerfile 同级目录必须创建 `.dockerignore`，排除 `.git`、`target/`、`node_modules`、`*.log`，防止每次 `docker build` 将数十 GB 的无用上下文打入镜像构建引擎。
+4. **Spring Boot 分层 Jar（Layered Jar）**：
+   
+   - 依赖层与业务层分离，每次代码迭代仅推送 5MB 业务差异层，不会在磁盘堆积大量重复臃肿的历史 Jar 镜像层。
+
+##### ③ 第三板斧：自动化磁盘定期清理策略（Crontab 定时器）
+* Docker 长期迭代会残留大量无标签的悬空镜像（`<none>` 镜像）、退出的容器和临时的构建缓存。
+* **配置生产定时任务**（每周日凌晨执行）：
+  ```bash
+  # 编辑 crontab
+  crontab -e
+  
+  # 每周日凌晨 3 点自动清理所有未被使用的容器、网络、镜像（保留 Volume 数据卷）
+  0 3 * * 0 /usr/bin/docker system prune -af --volumes=false > /dev/null 2>&1
+  ```
+  此命令可一键回收 5GB~20GB 的废弃镜像与缓存碎片，且不会破坏挂载的业务数据。
+
+##### ④ 第四板斧：数据持久化与日志外挂分离
+* **业务持久数据**：MySQL 数据目录务必通过 Volume 挂载在空间充裕的数据盘分区（如 `/data/docker-volumes`），绝对不能直接写在容器的可写层；
+* **业务落地日志（Logback）**：通过挂载外挂宿主机目录，并必须在 `logback-spring.xml` 中配置 **`<maxHistory>7</maxHistory>`（仅保留 7 天）** 及 **`<totalSizeCap>3GB</totalSizeCap>`**，防止业务本地日志失控膨胀。
+
+---
+
+#### 4. 面试现场高分答辩模板（口述一分钟版）
+
+* **面试官提问：** “如果给你们团队分配一台 4核8G 的服务器，你要在上面部署一套微服务系统，你会怎么规划？怎么保证内存和磁盘不崩？”
+* **20k+ 现场答辩参考话术：**
+  > “对于 4C8G 这样的典型资源受限环境，我的核心策略是**‘算力切分留底线、内存分层防 OOM、磁盘轮转防爆盘’**：
+  > 
+  > 1. **在资源规划上**：我严格杜绝超卖。首要原则是**保留 1.5GB 内存与 0.5 核给宿主机操作系统和守护进程**，防止系统雪崩连 SSH 都登不进。剩下的内存中，核心业务 Java 服务分配 3.5G，MySQL 分配 1.5G，网关分配 800M，Redis 分配 512M，所有容器都在 Docker 或 Compose 中硬性设定 `limits`。
+  > 2. **在内存压榨上**：
+  >    - **Java 层面**：我将 `MaxRAMPercentage` 设为 65%，预留 35% 给非堆；将 `-Xss` 压缩为 512k 或 256k，立竿见影省下上百兆物理栈内存；针对 1G 左右的轻量服务直接用 Parallel GC 替代 G1，避开 G1 额外的 RSet 堆外开销；开启 Spring Boot 的 `lazy-initialization` 降低启动常驻内存。
+  >    - **中间件层面**：锁定 MySQL `innodb_buffer_pool_size=1G`，Redis 强制设置 `maxmemory 400mb` 和 LRU 淘汰，杜绝中间件失控膨胀。
+  > 3. **在磁盘防爆上**：
+  >    - 在 `/etc/docker/daemon.json` 配置全局日志轮转，单容器日志硬限制 `50m * 3`；
+  >    - 采用 Spring Boot Layered Jar 和 Slim 基础镜像，每条 RUN 命令清理 apt 缓存；
+  >    - 部署每周 Crontab 定时执行 `docker system prune` 回收悬空镜像，同时业务 Logback 配置 7 天滚动删除。
+  > 
+  > 这一套方案在我们实际生产环境下，能让 4C8G 节点在保证系统高可用的前提下，长期平稳运行在 80% 内存水位与 30% 磁盘占用率以内。”
+
+---
+
+# Docker简短回答
 
 ## **一、Docker 与微服务架构**
 
@@ -3032,127 +3905,3 @@ CD 分两层：
 - **你感受到的就是：不用手动打包、不用手动部署，提交代码就能用最新版本**
 
 如果你愿意，我可以给你画一张**CI/CD 完整流程图（超清晰）**，或者用你的项目技术栈给你讲**你们团队的 CI/CD 长什么样**。
-
-# Jenkins 
-
-Jenkins 是**开源、Java 编写的自动化服务器**，核心作用是把**CI/CD（持续集成/持续交付）全流程自动化**，是企业 DevOps 最常用的流水线引擎。
-
----
-
-### 一、Jenkins 是什么（一句话）
-
-- **定位**：CI/CD 自动化平台，把“拉代码→编译→测试→打包→部署”全部自动跑起来。
-- **作者与历史**：2004 年由 Kohsuke Kawaguchi 创立，原名 Hudson；2011 年因 Oracle 商标问题分叉为 Jenkins，社区主导至今。
-- **运行环境**：纯 Java 程序，自带 Jetty，跨平台（Linux/Windows/macOS），默认端口 **8080**。
-
-
-
----
-
-### 二、核心架构：Master + Agent（主从）
-Jenkins 靠**分布式架构**横向扩展，不卡单节点。
-
-#### 1）Master（控制器/大脑）
-- 提供 Web UI、权限管理、任务调度、构建历史存储。
-- **不建议在 Master 上跑构建**，只做调度，保证稳定。
-
-#### 2）Agent（代理/工人）
-- 真正执行：拉代码、编译、测试、打包、部署。
-- 类型：
-  - **静态 Agent**：固定 VM/物理机，适合特殊环境、长任务。
-  - **动态 Agent（推荐）**：Docker/K8s Pod 按需创建、用完销毁，弹性好、成本低。
-
-#### 3）通信
-- Master ↔ Agent：**SSH（Linux）/JNLP（Windows）**，安全加密。
-
----
-
-### 三、核心能力（你日常会用到的）
-#### 1）持续集成 CI
-- **代码提交自动触发**（GitLab/GitHub Webhook）。
-- 自动：拉代码 → 编译 → 单元测试 → 代码扫描（SonarQube）→ 生成报告。
-- 快速反馈：提交后几分钟就知道“能不能合、有没有 bug”。
-
-#### 2）持续交付 CD
-- 构建成功后自动：打包（Jar/镜像）→ 推仓库（Nexus/Docker Hub）→ 部署到测试/预发。
-- 支持**一键发布到生产**、灰度、回滚。
-
-#### 3）流水线即代码（Pipeline as Code）
-- 用 **Jenkinsfile（Groovy）** 把流程写进 Git，版本化、可复用、可评审。
-```groovy
-pipeline {
-  agent any
-  stages {
-    stage('Build') { steps { sh 'mvn clean package' } }
-    stage('Test') { steps { sh 'mvn test' } }
-    stage('Deploy') { steps { sh 'deploy.sh' } }
-  }
-}
-```
-
-#### 4）插件生态（最强竞争力）
-- **1800+ 插件**，几乎能对接所有工具：
-  - 代码管理：Git/SVN
-  - 构建：Maven/Gradle/Docker
-  - 测试：JUnit/TestNG/Coverity
-  - 部署：K8s/Ansible/SSH
-  - 通知：邮件/钉钉/企业微信/Slack。
-
-#### 5）分布式构建
-- 多 Agent 并行跑，**大型项目/微服务速度提升数倍**。
-
----
-
-### 四、Jenkins 优势与劣势
-#### ✅ 优势
-- **开源免费**：无授权费，企业省钱。
-- **极度灵活**：插件+Groovy 脚本，**再复杂的流程都能定制**。
-- **跨平台+全语言**：Java/Python/Go/前端/移动端都支持。
-- **社区成熟**：问题一搜就有答案，资料极多。
-- **复杂/遗留系统首选**：比 GitLab CI、GitHub Actions 更能适配老架构、混合云。
-
-#### ❌ 劣势
-- **学习曲线陡**：插件多、配置项杂，Pipeline 要学 Groovy。
-- **UI 偏旧**：原生界面老，需装 Blue Ocean 美化。
-- **维护成本**：要定期升级、清理日志、管理 Agent。
-- **云原生不如原生工具**：GitLab CI、Argo CD 在 K8s 生态更轻量、集成更好。
-
----
-
-### 五、典型工作流（开发天天见）
-1. 你 `git push` 到 GitLab
-2. Webhook 触发 Jenkins Job
-3. Master 分配 Agent
-4. Agent 拉代码 → Maven 编译 → 跑单元测试 → Sonar 扫描
-5. 打包成 Jar → 构建 Docker 镜像 → 推镜像仓库
-6. 自动部署到测试环境 → 发钉钉通知结果
-7. 测试通过后，一键发布到生产
-
-**全程你只做：写代码、push、点发布**。
-
----
-
-### 六、常见对比（什么时候用 Jenkins？）
-- **Jenkins**：复杂流程、多语言、遗留系统、混合云、高度定制 → **企业级首选**。
-- **GitLab CI**：GitLab 项目、云原生、轻量 → **中小团队、快速上手**。
-- **GitHub Actions**：GitHub 项目、开源、简单流程 → **个人/开源项目**。
-- **Argo CD**：纯 K8s 部署 → **专注 CD，不做 CI**。
-
----
-
-### 七、安装与入门（极简步骤）
-1. 装 Java 11+
-2. 下载 Jenkins 包（war/msi）
-3. 启动：`java -jar jenkins.war`
-4. 浏览器访问 `http://ip:8080`，解锁、装插件、建第一个 Pipeline
-
----
-
-### 八、总结
-Jenkins 是**“全能自动化管家”**：
-- **CI**：自动构建、测试、扫描
-- **CD**：自动打包、部署、发布
-- **核心**：插件生态 + 分布式架构 + Pipeline as Code
-- **适合**：复杂项目、微服务、遗留系统、混合云企业
-
-要不要我给你一份**可直接复制的 Jenkinsfile 模板（含 Maven+Docker+K8s 部署）**？
